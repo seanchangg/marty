@@ -1,26 +1,47 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-primary: #2F5434;
+  --color-background: #121A14;
+  --color-surface: #1B291E;
+  --color-secondary: #5C8A67;
+  --color-highlight: #A8D5BA;
+  --color-text: #E0E6E1;
+  --color-danger: #B44040;
+  --font-sans: "Jost", sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(168, 213, 186, 0.4); }
+  50% { box-shadow: 0 0 20px rgba(168, 213, 186, 0.8); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-down {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 500px; }
+}
+
+html {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #121A14;
+  color: #E0E6E1;
+  font-family: "Jost", sans-serif;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2F5434 #121A14;
 }

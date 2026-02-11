@@ -1,0 +1,395 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import Card from "@/components/ui/Card";
+import Input from "@/components/ui/Input";
+import Button from "@/components/ui/Button";
+import { useAuth } from "@/hooks/useAuth";
+import {
+  generateEncryptionKey,
+  encryptApiKey,
+  exportKey,
+} from "@/lib/crypto";
+import type { ChatSettings } from "@/types";
+import { DEFAULT_CHAT_SETTINGS } from "@/types";
+
+export default function SettingsPage() {
+  const { user, profile, signOut } = useAuth();
+  const [username, setUsername] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [keyStatus, setKeyStatus] = useState<string | null>(null);
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const [exportedPrivateKey, setExportedPrivateKey] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [privateKeyInput, setPrivateKeyInput] = useState("");
+  const [hasStoredKey, setHasStoredKey] = useState(false);
+  const [hasEncryptedKey, setHasEncryptedKey] = useState(false);
+
+  // Chat settings state
+  const [chatSettings, setChatSettings] = useState<ChatSettings>(DEFAULT_CHAT_SETTINGS);
+  const [chatSettingsSaving, setChatSettingsSaving] = useState(false);
+  const [chatSettingsStatus, setChatSettingsStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (profile) {
+      setUsername(profile.username || "");
+      setFullName(profile.full_name || "");
+      setHasEncryptedKey(!!profile.encrypted_api_key);
+      if (profile.chat_settings) {
+        setChatSettings({ ...DEFAULT_CHAT_SETTINGS, ...profile.chat_settings });
+      }
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    setHasStoredKey(!!localStorage.getItem("dyno_encryption_key"));
+    const stored = localStorage.getItem("dyno_encryption_key");
+    if (stored) setPrivateKeyInput(stored);
+  }, []);
+
+  const handleSaveApiKey = async () => {
+    if (!apiKey.trim() || !user) return;
+    try {
+      const key = await generateEncryptionKey();
+      const ciphertext = await encryptApiKey(apiKey, key);
+      const exported = await exportKey(key);
+
+      // Store private key locally
+      localStorage.setItem("dyno_encryption_key", exported);
+      setHasStoredKey(true);
+      setPrivateKeyInput(exported);
+
+      // Store ciphertext in Supabase
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          encrypted_api_key: ciphertext,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setKeyStatus(`Failed to store encrypted key: ${data.error}`);
+        return;
+      }
+
+      setApiKey("");
+      setExportedPrivateKey(exported);
+      setHasEncryptedKey(true);
+      setShowKeyModal(true);
+      setKeyStatus("API key encrypted and saved.");
+    } catch {
+      setKeyStatus("Failed to encrypt API key.");
+    }
+  };
+
+  const handleSavePrivateKey = () => {
+    if (!privateKeyInput.trim()) return;
+    localStorage.setItem("dyno_encryption_key", privateKeyInput.trim());
+    setHasStoredKey(true);
+    setKeyStatus("Private key saved to browser.");
+  };
+
+  const handleCopyKey = async () => {
+    await navigator.clipboard.writeText(exportedPrivateKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSaveChatSettings = async () => {
+    if (!user) return;
+    setChatSettingsSaving(true);
+    setChatSettingsStatus(null);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          chat_settings: chatSettings,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setChatSettingsStatus(`Failed to save: ${data.error}`);
+      } else {
+        setChatSettingsStatus("Chat settings saved.");
+      }
+    } catch {
+      setChatSettingsStatus("Failed to save chat settings.");
+    } finally {
+      setChatSettingsSaving(false);
+    }
+  };
+
+  return (
+    <div className="max-w-lg">
+      <h1 className="text-xl font-bold text-highlight mb-6">Settings</h1>
+
+      <Card className="mb-6">
+        <h2 className="text-sm font-semibold text-text/70 mb-4">Profile</h2>
+        <div className="flex flex-col gap-3">
+          <Input
+            id="settings-username"
+            label="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+          <Input
+            id="settings-fullname"
+            label="Full Name"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+          <Button variant="secondary" disabled>
+            Save Profile
+          </Button>
+          <p className="text-xs text-text/30">
+            Profile updates will be available when Supabase is connected.
+          </p>
+        </div>
+      </Card>
+
+      <Card className="mb-6">
+        <h2 className="text-sm font-semibold text-text/70 mb-4">
+          API Key Management
+        </h2>
+        <div className="flex flex-col gap-3">
+          {hasEncryptedKey && (
+            <div className="text-xs text-secondary bg-primary/10 px-3 py-2">
+              Encrypted API key is stored in your account.
+            </div>
+          )}
+          <Input
+            id="settings-apikey"
+            label={hasEncryptedKey ? "Replace API Key" : "API Key"}
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="sk-..."
+          />
+          <Button onClick={handleSaveApiKey} disabled={!apiKey.trim()}>
+            Encrypt & Save
+          </Button>
+
+          <div className="border-t border-primary/20 pt-3 mt-1">
+            <label
+              htmlFor="settings-privatekey"
+              className="text-sm text-text/70 block mb-1.5"
+            >
+              Private Decryption Key
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="settings-privatekey"
+                type="password"
+                value={privateKeyInput}
+                onChange={(e) => setPrivateKeyInput(e.target.value)}
+                placeholder="Paste your private key here"
+                className="flex-1 bg-background border border-primary/30 px-3 py-2 text-sm text-text placeholder:text-text/40 focus:outline-none focus:border-highlight transition-colors font-mono"
+              />
+              <Button
+                variant="secondary"
+                onClick={handleSavePrivateKey}
+                disabled={!privateKeyInput.trim()}
+              >
+                Save
+              </Button>
+            </div>
+            <p className="text-xs text-text/30 mt-1.5">
+              {hasStoredKey
+                ? "Private key is stored in your browser."
+                : "No private key in browser. Paste it here to enable decryption."}
+            </p>
+          </div>
+
+          {keyStatus && (
+            <p className="text-xs text-highlight">{keyStatus}</p>
+          )}
+        </div>
+      </Card>
+
+      <Card className="mb-6">
+        <h2 className="text-sm font-semibold text-text/70 mb-4">
+          Chat Parameters
+        </h2>
+        <div className="flex flex-col gap-5">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-sm text-text/70">
+                History messages sent
+              </label>
+              <span className="text-sm font-mono text-highlight">
+                {chatSettings.maxHistoryMessages}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={chatSettings.maxHistoryMessages}
+              onChange={(e) =>
+                setChatSettings((s) => ({
+                  ...s,
+                  maxHistoryMessages: Number(e.target.value),
+                }))
+              }
+              className="w-full accent-primary"
+            />
+            <p className="text-xs text-text/30 mt-1">
+              Number of prior messages included as context with each chat request (0–100).
+            </p>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-sm text-text/70">
+                Max stored messages
+              </label>
+              <span className="text-sm font-mono text-highlight">
+                {chatSettings.maxStoredMessages}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={50}
+              max={500}
+              step={10}
+              value={chatSettings.maxStoredMessages}
+              onChange={(e) =>
+                setChatSettings((s) => ({
+                  ...s,
+                  maxStoredMessages: Number(e.target.value),
+                }))
+              }
+              className="w-full accent-primary"
+            />
+            <p className="text-xs text-text/30 mt-1">
+              How many messages are retained in chat history on disk (50–500).
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-text/70">
+                Include system context
+              </label>
+              <p className="text-xs text-text/30 mt-0.5">
+                Send claude.md as the system prompt in chat.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={chatSettings.includeSystemContext}
+              onClick={() =>
+                setChatSettings((s) => ({
+                  ...s,
+                  includeSystemContext: !s.includeSystemContext,
+                }))
+              }
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center border border-primary/30 transition-colors ${
+                chatSettings.includeSystemContext
+                  ? "bg-primary"
+                  : "bg-background"
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform bg-text transition-transform ${
+                  chatSettings.includeSystemContext
+                    ? "translate-x-6"
+                    : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-text/70">
+                Include tool descriptions
+              </label>
+              <p className="text-xs text-text/30 mt-0.5">
+                Append tool usage instructions to the system prompt. Off by default since chat has no tools.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={chatSettings.includeToolDescriptions}
+              onClick={() =>
+                setChatSettings((s) => ({
+                  ...s,
+                  includeToolDescriptions: !s.includeToolDescriptions,
+                }))
+              }
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center border border-primary/30 transition-colors ${
+                chatSettings.includeToolDescriptions
+                  ? "bg-primary"
+                  : "bg-background"
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform bg-text transition-transform ${
+                  chatSettings.includeToolDescriptions
+                    ? "translate-x-6"
+                    : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
+          <Button
+            onClick={handleSaveChatSettings}
+            disabled={chatSettingsSaving}
+          >
+            {chatSettingsSaving ? "Saving..." : "Save Chat Settings"}
+          </Button>
+
+          {chatSettingsStatus && (
+            <p className="text-xs text-highlight">{chatSettingsStatus}</p>
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <h2 className="text-sm font-semibold text-text/70 mb-4">Account</h2>
+        <Button variant="secondary" onClick={signOut}>
+          Sign Out
+        </Button>
+      </Card>
+
+      {showKeyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <Card className="w-full max-w-md mx-4">
+            <h2 className="text-base font-bold text-highlight mb-2">
+              Save Your Private Key
+            </h2>
+            <p className="text-sm text-text/60 mb-4">
+              This is your decryption key. It is saved in your browser, but if
+              you clear your data it will be lost. Copy it now and keep it
+              somewhere safe — you can re-enter it later.
+            </p>
+            <div className="bg-background border border-primary/30 p-3 mb-4 break-all font-mono text-xs text-text/80 select-all">
+              {exportedPrivateKey}
+            </div>
+            <div className="flex gap-3">
+              <Button onClick={handleCopyKey}>
+                {copied ? "Copied" : "Copy Key"}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setShowKeyModal(false)}
+              >
+                I saved it
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
