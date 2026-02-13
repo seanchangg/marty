@@ -213,7 +213,7 @@ export default function WidgetCanvas({
   return (
     <div
       ref={scrollRef}
-      className="w-full h-[calc(100vh-4rem)] overflow-auto"
+      className="w-full h-[calc(100vh-4rem)] overflow-auto pl-4"
     >
       {/* Zoom wrapper — CSS zoom scales everything uniformly:
           layout, fonts, borders, widget internals, pointer coords */}
