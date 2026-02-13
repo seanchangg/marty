@@ -792,6 +792,11 @@ export class OrchestrationHandler {
       return "Error: widgetId is required for widget actions";
     }
 
+    // Protect child chat widgets from programmatic removal — only the user can close them
+    if (action === "remove" && widgetId.startsWith("chat-child-")) {
+      return JSON.stringify({ status: "blocked", reason: "Child chat widgets can only be closed by the user." });
+    }
+
     this.send({
       type: "ui_mutation",
       action,

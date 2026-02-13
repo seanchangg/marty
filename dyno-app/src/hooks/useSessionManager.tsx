@@ -352,6 +352,18 @@ export function SessionManagerProvider({ children, onUIAction }: SessionManagerP
           }
           return updated;
         });
+        // Safety net: re-ensure the child chat widget still exists in the layout.
+        // The layout reducer's "add" is idempotent (skips duplicates), so this
+        // is a no-op if the widget is already present.
+        if (endSessionId !== "master" && onUIActionRef.current) {
+          onUIActionRef.current({
+            action: "add",
+            widgetId: `chat-${endSessionId}`,
+            widgetType: "chat",
+            sessionId: endSessionId,
+            props: { sessionId: endSessionId },
+          });
+        }
         break;
       }
 
