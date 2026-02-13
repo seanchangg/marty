@@ -49,20 +49,24 @@ def _cloud_write_blocked(filename: str) -> str | None:
 
     return None
 
-TOOL_DEFS = [
+_CLOUD_TOOL_DEFS = [
     {
         "name": "read_file",
-        "description": (
-            "Read a file. In local mode, use paths like 'python/tools/web.py' or "
-            "'data/context/claude.md'. In cloud mode, user files are under 'workspace/' "
-            "(e.g. 'workspace/skills/my-skill.md', 'workspace/data/config.json')."
-        ),
+        "description": "Read a file from your workspace. For large files, use offset and limit to read in chunks.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Path to read (e.g. 'workspace/data/config.json', 'python/tools/web.py', 'data/context/claude.md')"
+                    "description": "Path to read (must start with 'workspace/', e.g. 'workspace/data/config.json')"
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "Character offset to start reading from (default: 0)"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max characters to return (default: 50000). Use with offset for large files."
                 }
             },
             "required": ["filename"]
@@ -70,16 +74,13 @@ TOOL_DEFS = [
     },
     {
         "name": "list_files",
-        "description": (
-            "List files. In local mode, lists python/ and data/ directories. "
-            "In cloud mode, lists files under 'workspace/' in cloud storage."
-        ),
+        "description": "List files in your workspace cloud storage.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Directory to list (e.g. 'workspace/', 'workspace/skills/', 'python/tools', 'data/context'). Defaults to listing roots."
+                    "description": "Directory to list (e.g. 'workspace/', 'workspace/data/'). Defaults to workspace root."
                 }
             },
             "required": []
@@ -88,18 +89,15 @@ TOOL_DEFS = [
     {
         "name": "write_file",
         "description": (
-            "Write a new file or overwrite an existing file. In cloud mode, write to "
-            "'workspace/' paths (e.g. 'workspace/data/config.json', "
-            "'workspace/widgets/chart.html'). python/ is read-only in cloud mode. "
-            "For skill files, use create_skill/update_skill instead. "
-            "In local mode, write to python/ or data/."
+            "Write a file to your workspace (e.g. 'workspace/data/config.json', "
+            "'workspace/widgets/chart.html'). For skill files, use create_skill/update_skill instead."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Path to write (e.g. 'workspace/skills/my-skill.md', 'python/tools/new_skill.py')"
+                    "description": "Path to write (must start with 'workspace/', e.g. 'workspace/data/config.json')"
                 },
                 "content": {
                     "type": "string",
@@ -112,17 +110,15 @@ TOOL_DEFS = [
     {
         "name": "modify_file",
         "description": (
-            "Modify an existing file by replacing a specific string with a new string. "
-            "In cloud mode, only workspace/ paths are writable (python/ is read-only). "
-            "For skill files, use update_skill instead. "
-            "In local mode, works with python/ and data/ paths too."
+            "Modify an existing workspace file by replacing a specific string. "
+            "For skill files, use update_skill instead."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Path to modify (e.g. 'workspace/data/config.json', 'python/tools/web.py')"
+                    "description": "Path to modify (must start with 'workspace/', e.g. 'workspace/data/config.json')"
                 },
                 "old_string": {
                     "type": "string",
@@ -137,6 +133,90 @@ TOOL_DEFS = [
         }
     },
 ]
+
+_LOCAL_TOOL_DEFS = [
+    {
+        "name": "read_file",
+        "description": (
+            "Read a file. Use paths like 'python/tools/web.py' or "
+            "'data/context/claude.md'. For large files, use offset and limit to read in chunks."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "description": "Path to read (e.g. 'python/tools/web.py', 'data/context/claude.md')"
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "Character offset to start reading from (default: 0)"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max characters to return (default: 50000). Use with offset for large files."
+                }
+            },
+            "required": ["filename"]
+        }
+    },
+    {
+        "name": "list_files",
+        "description": "List files in python/ and data/ directories.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Directory to list (e.g. 'python/tools', 'data/context'). Defaults to listing roots."
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "write_file",
+        "description": "Create or overwrite a file in python/ or data/.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "description": "Path to write (e.g. 'python/tools/new_tool.py', 'data/context/claude.md')"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Full content to write to the file"
+                }
+            },
+            "required": ["filename", "content"]
+        }
+    },
+    {
+        "name": "modify_file",
+        "description": "Modify an existing file by replacing a specific string with a new string.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "description": "Path to modify (e.g. 'python/tools/web.py', 'data/context/claude.md')"
+                },
+                "old_string": {
+                    "type": "string",
+                    "description": "The exact string to find and replace"
+                },
+                "new_string": {
+                    "type": "string",
+                    "description": "The replacement string"
+                }
+            },
+            "required": ["filename", "old_string", "new_string"]
+        }
+    },
+]
+
+TOOL_DEFS = _CLOUD_TOOL_DEFS if STORAGE_MODE == "cloud" else _LOCAL_TOOL_DEFS
 
 READ_ONLY = {"read_file", "list_files"}
 
@@ -187,9 +267,25 @@ def _resolve_path(filename: str) -> "tuple[__import__('pathlib').Path, str]":
 
 async def handle_read_file(input_data: dict) -> str:
     filename = input_data["filename"]
+    offset = input_data.get("offset", 0) or 0
+    limit = input_data.get("limit", 50000) or 50000
 
-    # Cloud mode for workspace/ paths
-    if _is_cloud_path(filename):
+    def _slice_content(content: str) -> str:
+        total = len(content)
+        sliced = content[offset:offset + limit]
+        if total > offset + limit:
+            return f"{sliced}\n\n[Truncated: showing chars {offset}-{offset + len(sliced)} of {total}. Use offset={offset + limit} to read more.]"
+        if offset > 0:
+            return f"{sliced}\n\n[Showing chars {offset}-{offset + len(sliced)} of {total}.]"
+        return sliced
+
+    # Cloud mode: only workspace/ paths allowed
+    if STORAGE_MODE == "cloud":
+        if not filename.startswith("workspace/"):
+            return (
+                "Error: In cloud mode, only workspace/ paths are readable. "
+                f"Cannot read: {filename}"
+            )
         user_id = input_data.get("userId", "")
         if not user_id:
             return "Error: userId is required for cloud storage operations"
@@ -197,11 +293,10 @@ async def handle_read_file(input_data: dict) -> str:
             from . import storage_client
             bucket = _get_cloud_bucket(filename)
             cloud_path = _cloud_path(filename)
-            # Strip bucket-specific prefix if using widgets bucket
             if bucket == WIDGETS_BUCKET and cloud_path.startswith("widgets/"):
                 cloud_path = cloud_path[len("widgets/"):]
             data = storage_client.read_file(bucket, user_id, cloud_path)
-            return data.decode("utf-8")
+            return _slice_content(data.decode("utf-8"))
         except RuntimeError as e:
             return f"Error: {e}"
         except UnicodeDecodeError:
@@ -214,30 +309,58 @@ async def handle_read_file(input_data: dict) -> str:
         return f"Error: {e}"
     if not path.exists():
         return f"Error: File not found: {filename}"
-    return path.read_text(encoding="utf-8")
+    return _slice_content(path.read_text(encoding="utf-8"))
 
 
 async def handle_list_files(input_data: dict) -> str:
     subdir = input_data.get("path", "")
 
-    # Cloud mode for workspace/ paths
-    if STORAGE_MODE == "cloud" and (not subdir or subdir.startswith("workspace")):
+    # Cloud mode: only workspace/ paths
+    if STORAGE_MODE == "cloud":
+        if subdir and not subdir.startswith("workspace"):
+            return (
+                "Error: In cloud mode, only workspace/ paths are listable. "
+                f"Cannot list: {subdir}"
+            )
         user_id = input_data.get("userId", "")
         if not user_id:
             return "Error: userId is required for cloud storage operations"
         try:
             from . import storage_client
             prefix = _cloud_path(subdir) if subdir.startswith("workspace/") else ""
-            files = storage_client.list_files(WORKSPACE_BUCKET, user_id, prefix)
-            if not files:
+
+            # Collect files from both workspace and widgets buckets
+            all_files: list[tuple[str, dict]] = []  # (display_prefix, file_dict)
+
+            # Check workspace bucket
+            try:
+                ws_files = storage_client.list_files(WORKSPACE_BUCKET, user_id, prefix)
+                for f in ws_files:
+                    if isinstance(f, dict) and f.get("name"):
+                        all_files.append((prefix, f))
+            except RuntimeError:
+                pass
+
+            # Also check widgets bucket when listing workspace/widgets/ or all
+            if not prefix or prefix.startswith("widgets"):
+                widget_prefix = prefix[len("widgets/"):] if prefix.startswith("widgets/") else ""
+                try:
+                    wg_files = storage_client.list_files(WIDGETS_BUCKET, user_id, widget_prefix)
+                    for f in wg_files:
+                        if isinstance(f, dict) and f.get("name"):
+                            all_files.append(("widgets/", f))
+                except RuntimeError:
+                    pass
+
+            if not all_files:
                 return "No files found in workspace."
             lines = ["## workspace/"]
-            for f in files:
+            for display_prefix, f in all_files:
                 name = f.get("name", "")
                 metadata = f.get("metadata", {})
                 size = metadata.get("size", 0) if metadata else 0
                 if name:
-                    lines.append(f"workspace/{name} ({size} bytes)")
+                    lines.append(f"workspace/{display_prefix}{name} ({size} bytes)")
             return "\n".join(lines)
         except RuntimeError as e:
             return f"Error: {e}"

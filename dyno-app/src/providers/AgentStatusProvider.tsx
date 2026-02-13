@@ -31,8 +31,10 @@ export default function AgentStatusProvider({
 
   // Manual override: lets the gateway WS or useBuildSession push status
   // immediately without waiting for the next health poll.
+  // Setting "working" holds the override; setting "online"/"offline" clears it
+  // so the health poll can take over again.
   const setStatus = useCallback((s: AgentStatus) => {
-    manualOverrideRef.current = s;
+    manualOverrideRef.current = s === "working" ? s : null;
     setStatusState(s);
   }, []);
 
@@ -46,14 +48,13 @@ export default function AgentStatusProvider({
           signal: AbortSignal.timeout(3000),
         });
         if (!res.ok) throw new Error("not ok");
-        const data = await res.json();
         if (cancelled) return;
 
-        const derived: AgentStatus =
-          (data.activeTasks ?? 0) > 0 ? "working" : "online";
-
-        manualOverrideRef.current = null;
-        setStatusState(derived);
+        // Don't clobber the WebSocket-driven "working" status —
+        // the WS session manager sets/clears it with better timing.
+        if (manualOverrideRef.current === null) {
+          setStatusState("online");
+        }
       } catch {
         if (cancelled) return;
         manualOverrideRef.current = null;

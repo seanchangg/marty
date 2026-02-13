@@ -1,13 +1,17 @@
-"""Upload reading tool: read_upload.
+"""Upload tools: read_upload, list_uploads.
 
 Dual-mode: reads from local filesystem or Supabase Storage
 depending on STORAGE_MODE setting.
 """
 
 import json
+import os
 import time
+import urllib.request
+import urllib.parse
+import urllib.error
 
-from ._common import UPLOADS_DIR, UPLOADS_BUCKET, STORAGE_MODE, safe_path
+from ._common import UPLOADS_DIR, UPLOADS_BUCKET, STORAGE_MODE, FRONTEND_URL, safe_path
 
 TOOL_DEFS = [
     {
@@ -24,9 +28,27 @@ TOOL_DEFS = [
             "required": ["filename"]
         }
     },
+    {
+        "name": "list_uploads",
+        "description": (
+            "List all files in the user's Document Vault. "
+            "Returns filename, size, and upload date for each file. "
+            "Always pass the userId from the system prompt."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "userId": {
+                    "type": "string",
+                    "description": "The user's ID (provided in the system prompt)"
+                }
+            },
+            "required": ["userId"]
+        }
+    },
 ]
 
-READ_ONLY = {"read_upload"}
+READ_ONLY = {"read_upload", "list_uploads"}
 
 
 async def handle_read_upload(input_data: dict) -> str:
@@ -65,6 +87,39 @@ async def handle_read_upload(input_data: dict) -> str:
         return f"Binary file: {filename} ({stat.st_size} bytes, modified {time.ctime(stat.st_mtime)})"
 
 
+def _format_size(size: int) -> str:
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
+
+
+async def handle_list_uploads(input_data: dict) -> str:
+    user_id = input_data.get("userId", "")
+    if not user_id:
+        return "Error: userId is required"
+
+    try:
+        url = f"{FRONTEND_URL}/api/uploads?userId={urllib.parse.quote(user_id)}"
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            files = json.loads(resp.read())
+
+        if not files:
+            return "No files in the Document Vault. The user can upload files at /vault."
+
+        lines = []
+        for f in files:
+            name = f.get("filename", "?")
+            size = _format_size(f.get("size", 0))
+            lines.append(f"  {name} ({size})")
+
+        return f"{len(files)} file(s) in Vault:\n" + "\n".join(lines)
+    except Exception as e:
+        return f"Error listing uploads: {str(e)}"
+
+
 HANDLERS = {
     "read_upload": handle_read_upload,
+    "list_uploads": handle_list_uploads,
 }

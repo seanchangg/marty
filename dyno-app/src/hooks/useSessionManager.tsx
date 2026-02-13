@@ -33,6 +33,7 @@ export interface SessionState {
   tokensOut: number;
   model?: string;
   status?: "running" | "completed" | "error" | "terminated";
+  liveThinking: ThinkingStep[];
 }
 
 function createInitialSession(): SessionState {
@@ -42,6 +43,7 @@ function createInitialSession(): SessionState {
     proposals: [],
     tokensIn: 0,
     tokensOut: 0,
+    liveThinking: [],
   };
 }
 
@@ -174,35 +176,38 @@ export function SessionManagerProvider({ children, onUIAction }: SessionManagerP
         break;
 
       case "thinking": {
+        const step: ThinkingStep = { type: "thought", content: data.text, timestamp: Date.now() };
         const steps = thinkingRefs.current.get(sessionId) ?? [];
-        steps.push({
-          type: "thought",
-          content: data.text,
-          timestamp: Date.now(),
-        });
+        steps.push(step);
         thinkingRefs.current.set(sessionId, steps);
+        store.updateSession(sessionId, (prev) => ({
+          ...prev,
+          liveThinking: [...prev.liveThinking, step],
+        }));
         break;
       }
 
       case "tool_call": {
+        const step: ThinkingStep = { type: "tool_call", content: `${data.tool}(${JSON.stringify(data.input)})`, timestamp: Date.now() };
         const steps = thinkingRefs.current.get(sessionId) ?? [];
-        steps.push({
-          type: "tool_call",
-          content: `${data.tool}(${JSON.stringify(data.input)})`,
-          timestamp: Date.now(),
-        });
+        steps.push(step);
         thinkingRefs.current.set(sessionId, steps);
+        store.updateSession(sessionId, (prev) => ({
+          ...prev,
+          liveThinking: [...prev.liveThinking, step],
+        }));
         break;
       }
 
       case "tool_result": {
+        const step: ThinkingStep = { type: "tool_result", content: data.result, timestamp: Date.now() };
         const steps = thinkingRefs.current.get(sessionId) ?? [];
-        steps.push({
-          type: "tool_result",
-          content: data.result,
-          timestamp: Date.now(),
-        });
+        steps.push(step);
         thinkingRefs.current.set(sessionId, steps);
+        store.updateSession(sessionId, (prev) => ({
+          ...prev,
+          liveThinking: [...prev.liveThinking, step],
+        }));
         break;
       }
 
@@ -279,6 +284,7 @@ export function SessionManagerProvider({ children, onUIAction }: SessionManagerP
           proposals: [],
           tokensIn: data.tokensIn ?? prev.tokensIn,
           tokensOut: data.tokensOut ?? prev.tokensOut,
+          liveThinking: [],
         }));
         thinkingRefs.current.set(sessionId, []);
         if (sessionId === "master") {
@@ -357,6 +363,9 @@ export function SessionManagerProvider({ children, onUIAction }: SessionManagerP
           size: data.size,
           props: data.props,
           sessionId: data.sessionId,
+          tabId: data.tabId,
+          tabLabel: data.tabLabel,
+          tabIndex: data.tabIndex,
         });
         break;
 
@@ -386,6 +395,7 @@ export function SessionManagerProvider({ children, onUIAction }: SessionManagerP
             proposals: [],
             tokensIn: data.tokensIn ?? prev.tokensIn,
             tokensOut: data.tokensOut ?? prev.tokensOut,
+            liveThinking: [],
           }));
           thinkingRefs.current.set(doneSessionId, []);
         } else {
@@ -395,6 +405,7 @@ export function SessionManagerProvider({ children, onUIAction }: SessionManagerP
             proposals: [],
             tokensIn: data.tokensIn ?? prev.tokensIn,
             tokensOut: data.tokensOut ?? prev.tokensOut,
+            liveThinking: [],
           }));
         }
         if (doneSessionId === "master") {

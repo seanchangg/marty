@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import { SessionManagerProvider } from "@/hooks/useSessionManager";
 import { useWidgetLayoutContext } from "@/hooks/useWidgetLayoutContext";
 import { ScreenshotSelectionProvider } from "@/hooks/useScreenshotSelection";
+import { VaultSelectionProvider } from "@/hooks/useVaultSelection";
 
 /**
  * Bridges SessionManagerProvider with WidgetLayoutProvider.
@@ -18,7 +19,9 @@ export function DashboardSessionBridge({ children }: { children: ReactNode }) {
   return (
     <SessionManagerProvider onUIAction={processUIAction}>
       <ScreenshotSelectionProvider>
-        {children}
+        <VaultSelectionProvider>
+          {children}
+        </VaultSelectionProvider>
       </ScreenshotSelectionProvider>
     </SessionManagerProvider>
   );

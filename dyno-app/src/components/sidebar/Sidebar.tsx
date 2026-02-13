@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, FlaskConical, FileText, Settings, Puzzle } from "lucide-react";
+import { LayoutDashboard, FlaskConical, FileText, Settings, Puzzle, HardDrive } from "lucide-react";
 import DynoSprite from "@/components/sprite/DynoSprite";
 import NavLink from "./NavLink";
 import { useAgentStatus } from "@/hooks/useAgentStatus";
@@ -11,6 +11,7 @@ const baseNavItems = [
   { href: "/agent-lab", label: "Agent Lab", icon: FlaskConical },
   { href: "/skills", label: "Skills", icon: Puzzle },
   { href: "/context", label: "Context", icon: FileText },
+  { href: "/vault", label: "Vault", icon: HardDrive },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

@@ -13,7 +13,8 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "ws": "^8.18.0",
     "zod": "^3.24.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "@supabase/supabase-js": "^2.49.0"
   },
   "devDependencies": {
     "@types/node": "^20",

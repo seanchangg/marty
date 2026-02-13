@@ -1,23 +1,31 @@
 "use client";
 
-import { useCallback, useState, useRef, useEffect } from "react";
+import { useCallback, useMemo, useState, useRef, useEffect } from "react";
 import WidgetCanvas from "@/components/widgets/WidgetCanvas";
+import TabBar from "@/components/widgets/TabBar";
 import { useWidgetLayoutContext } from "@/hooks/useWidgetLayoutContext";
+import { PROTECTED_WIDGET_IDS } from "@/hooks/useWidgetLayout";
 import { useSession } from "@/hooks/useSessionManager";
 import { getAllWidgetTypes } from "@/lib/widgets/registry";
 import type { Widget } from "@/types/widget";
 
 export default function DashboardPage() {
-  const { widgets, setWidgets, processUIAction } = useWidgetLayoutContext();
+  const { layout, activeTab, widgets, setLayout, processUIAction } = useWidgetLayoutContext();
   const { cancelSession } = useSession("master");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const handleLayoutChange = useCallback(
     (updated: Widget[]) => {
-      setWidgets(updated);
+      // Replace active tab's widgets in the full TabbedLayout
+      setLayout({
+        ...layout,
+        tabs: layout.tabs.map((t) =>
+          t.id === layout.activeTabId ? { ...t, widgets: updated } : t
+        ),
+      });
     },
-    [setWidgets]
+    [layout, setLayout]
   );
 
   const handleRemoveWidget = useCallback(
@@ -44,6 +52,39 @@ export default function DashboardPage() {
     [processUIAction]
   );
 
+  // Tab handlers
+  const handleTabSwitch = useCallback(
+    (tabId: string) => {
+      processUIAction({ action: "tab_switch", widgetId: "", tabId });
+    },
+    [processUIAction]
+  );
+
+  const handleTabCreate = useCallback(() => {
+    processUIAction({ action: "tab_create", widgetId: "" });
+  }, [processUIAction]);
+
+  const handleTabDelete = useCallback(
+    (tabId: string) => {
+      processUIAction({ action: "tab_delete", widgetId: "", tabId });
+    },
+    [processUIAction]
+  );
+
+  const handleTabRename = useCallback(
+    (tabId: string, label: string) => {
+      processUIAction({ action: "tab_rename", widgetId: "", tabId, tabLabel: label });
+    },
+    [processUIAction]
+  );
+
+  const handleTabReorder = useCallback(
+    (tabId: string, newIndex: number) => {
+      processUIAction({ action: "tab_reorder", widgetId: "", tabId, tabIndex: newIndex });
+    },
+    [processUIAction]
+  );
+
   // Close menu on outside click
   useEffect(() => {
     if (!menuOpen) return;
@@ -58,13 +99,37 @@ export default function DashboardPage() {
 
   const widgetTypes = getAllWidgetTypes();
 
+  // Tabs that contain protected widgets cannot be closed
+  const nonCloseableTabIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const tab of layout.tabs) {
+      if (tab.widgets.some((w) => PROTECTED_WIDGET_IDS.has(w.id))) {
+        ids.add(tab.id);
+      }
+    }
+    return ids;
+  }, [layout.tabs]);
+
   return (
-    <div className="min-h-[calc(100vh-4rem)]">
-      <WidgetCanvas
-        widgets={widgets}
-        onLayoutChange={handleLayoutChange}
-        onRemoveWidget={handleRemoveWidget}
+    <div className="min-h-[calc(100vh-4rem)] flex flex-col">
+      <TabBar
+        tabs={layout.tabs}
+        activeTabId={layout.activeTabId}
+        nonCloseableTabIds={nonCloseableTabIds}
+        onSwitch={handleTabSwitch}
+        onCreate={handleTabCreate}
+        onDelete={handleTabDelete}
+        onRename={handleTabRename}
+        onReorder={handleTabReorder}
       />
+
+      <div className="flex-1">
+        <WidgetCanvas
+          widgets={widgets}
+          onLayoutChange={handleLayoutChange}
+          onRemoveWidget={handleRemoveWidget}
+        />
+      </div>
 
       {/* Add Widget Button */}
       <div ref={menuRef} className="fixed bottom-6 right-6 z-40">

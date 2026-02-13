@@ -8,6 +8,7 @@
 import { WebSocket } from "ws";
 import { v4 as uuidv4 } from "uuid";
 import type { GatewayAgent } from "../agent.js";
+import type { ActivityLogger } from "../activity-logger.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ export interface DynoInboundMessage {
 export interface PendingApproval {
   resolve: (decision: { approved: boolean; editedInput?: Record<string, string> }) => void;
   timeout: ReturnType<typeof setTimeout>;
+  payload: Record<string, unknown>; // original proposal payload for re-delivery
 }
 
 // ── Channel Handler ──────────────────────────────────────────────────────────
@@ -42,10 +44,13 @@ export class DynoDashboardChannel {
   private agent: GatewayAgent;
   private pendingApprovals = new Map<string, PendingApproval>();
   private userId: string | null = null;
+  private activityLogger: ActivityLogger | null;
+  private toolCallTimestamps = new Map<string, { tool: string; input: Record<string, unknown>; time: number }>();
 
-  constructor(ws: WebSocket, agent: GatewayAgent) {
+  constructor(ws: WebSocket, agent: GatewayAgent, activityLogger?: ActivityLogger | null) {
     this.ws = ws;
     this.agent = agent;
+    this.activityLogger = activityLogger ?? null;
   }
 
   /** Send a JSON message to the frontend. */
@@ -273,6 +278,14 @@ export class DynoDashboardChannel {
 
       case "tool_call":
         this.send({ type: "tool_call", ...outPayload });
+        // Track start time for duration calculation
+        if (payload.id) {
+          this.toolCallTimestamps.set(payload.id as string, {
+            tool: payload.tool as string,
+            input: (payload.input as Record<string, unknown>) || {},
+            time: Date.now(),
+          });
+        }
         return null;
 
       case "tool_result":
@@ -284,6 +297,21 @@ export class DynoDashboardChannel {
             sessionId,
             message: `Tool "${payload.tool}" failed: ${String(payload.result).slice(0, 200)}`,
           });
+        }
+        // Log tool call to activity logger
+        if (this.activityLogger && this.userId && payload.id) {
+          const start = this.toolCallTimestamps.get(payload.id as string);
+          const durationMs = start ? Date.now() - start.time : undefined;
+          this.activityLogger.logToolCall({
+            userId: this.userId,
+            sessionId,
+            toolName: (start?.tool || payload.tool || "unknown") as string,
+            toolParams: start?.input,
+            success: !payload.isError,
+            durationMs,
+            errorMessage: payload.isError ? String(payload.result).slice(0, 500) : undefined,
+          });
+          this.toolCallTimestamps.delete(payload.id as string);
         }
         return null;
 
@@ -305,7 +333,7 @@ export class DynoDashboardChannel {
             });
           }, APPROVAL_TIMEOUT_MS);
 
-          this.pendingApprovals.set(proposalId, { resolve, timeout });
+          this.pendingApprovals.set(proposalId, { resolve, timeout, payload: { type: "proposal", ...outPayload } });
         });
       }
 
@@ -315,6 +343,14 @@ export class DynoDashboardChannel {
 
       case "token_usage":
         this.send({ type: "token_usage", ...outPayload });
+        // Log token usage to hourly rollup
+        if (this.activityLogger && this.userId) {
+          const deltaIn = (payload.deltaIn as number) || (payload.tokensIn as number) || 0;
+          const deltaOut = (payload.deltaOut as number) || (payload.tokensOut as number) || 0;
+          if (deltaIn > 0 || deltaOut > 0) {
+            this.activityLogger.incrementHourlyTokens(this.userId, deltaIn, deltaOut);
+          }
+        }
         return null;
 
       case "done":
@@ -369,6 +405,30 @@ export class DynoDashboardChannel {
   }
 
   /** Cleanup pending approvals on disconnect. */
+  /** Send an event to the connected frontend (used by internal services). */
+  sendEvent(payload: Record<string, unknown>) {
+    this.send(payload);
+  }
+
+  /**
+   * Swap the underlying WebSocket (e.g. after a page reload reconnects).
+   * In-flight work keeps running — sends now go to the new socket.
+   * Re-sends any pending proposals so the new frontend can approve/deny them.
+   */
+  replaceWebSocket(ws: WebSocket) {
+    this.ws = ws;
+
+    // Re-send pending proposals to the new frontend so user can approve/deny
+    for (const [, pending] of this.pendingApprovals) {
+      this.send(pending.payload);
+    }
+  }
+
+  /** Whether the agent has in-flight work (pending approvals or the loop is running). */
+  hasPendingWork(): boolean {
+    return this.pendingApprovals.size > 0;
+  }
+
   cleanup() {
     for (const [id, pending] of this.pendingApprovals) {
       clearTimeout(pending.timeout);

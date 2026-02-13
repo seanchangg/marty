@@ -17,38 +17,107 @@ from ._common import DATA_DIR, STORAGE_MODE, SCRIPTS_BUCKET
 SCRIPTS_DIR = DATA_DIR / "scripts"
 SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
 
+# ── Environment sanitization for subprocess execution ─────────────────────────
+# In cloud mode, strip secrets from the environment so user code can't read them.
+
+_SENSITIVE_ENV_KEYS = {
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_JWT_SECRET",
+    "GATEWAY_KEY_STORE_SECRET",
+    "ANTHROPIC_API_KEY",
+}
+
+
+def _get_safe_env() -> dict[str, str] | None:
+    """Return a sanitized environment dict for subprocess execution.
+
+    In cloud mode, strips sensitive keys. In local mode, returns None
+    (inherit parent env as-is for developer convenience).
+    """
+    if STORAGE_MODE != "cloud":
+        return None
+    env = dict(os.environ)
+    for key in _SENSITIVE_ENV_KEYS:
+        env.pop(key, None)
+    return env
+
 _LANG_CONFIG = {
     "python": {"ext": ".py", "cmd": ["python3"]},
     "bash": {"ext": ".sh", "cmd": ["bash"]},
     "javascript": {"ext": ".js", "cmd": ["node"]},
     "typescript": {"ext": ".ts", "cmd": ["npx", "tsx"]},
+    "cpp": {"ext": ".cpp", "cmd": None, "compiled": True},
 }
 
 
-async def _run_file(filepath: str, timeout: int, args: list[str] | None = None) -> dict:
-    """Execute a file and return stdout/stderr/exit_code."""
+async def _run_file(
+    filepath: str,
+    timeout: int,
+    args: list[str] | None = None,
+    stdin_data: str | None = None,
+) -> dict:
+    """Execute a file and return stdout/stderr/exit_code.
+
+    If *stdin_data* is provided it is piped to the process's stdin.
+    C++ files (.cpp) are compiled with g++ first, then the binary is run.
+    """
     ext = Path(filepath).suffix
-    cmd = None
-    for cfg in _LANG_CONFIG.values():
-        if cfg["ext"] == ext:
-            cmd = cfg["cmd"]
-            break
-    if not cmd:
-        # Try to infer from shebang or just run with python
-        cmd = ["python3"]
+    binary_path: str | None = None
 
-    full_cmd = [*cmd, filepath, *(args or [])]
+    # ── C++ compilation step ──────────────────────────────────────────────
+    if ext == ".cpp":
+        binary_path = filepath.rsplit(".", 1)[0]
+        compile_proc = await asyncio.create_subprocess_exec(
+            "g++", "-std=c++17", "-o", binary_path, filepath,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(DATA_DIR),
+            env=_get_safe_env(),
+        )
+        try:
+            c_stdout, c_stderr = await asyncio.wait_for(
+                compile_proc.communicate(), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            compile_proc.kill()
+            return {
+                "stdout": "",
+                "stderr": f"C++ compilation timed out after {timeout}s",
+                "exit_code": -1,
+                "success": False,
+            }
+        if compile_proc.returncode != 0:
+            return {
+                "stdout": c_stdout.decode("utf-8", errors="replace"),
+                "stderr": c_stderr.decode("utf-8", errors="replace"),
+                "exit_code": compile_proc.returncode,
+                "success": False,
+            }
+        full_cmd = [binary_path, *(args or [])]
+    else:
+        cmd = None
+        for cfg in _LANG_CONFIG.values():
+            if cfg["ext"] == ext:
+                cmd = cfg.get("cmd")
+                break
+        if not cmd:
+            cmd = ["python3"]
+        full_cmd = [*cmd, filepath, *(args or [])]
 
+    # ── Run ────────────────────────────────────────────────────────────────
     process = await asyncio.create_subprocess_exec(
         *full_cmd,
+        stdin=asyncio.subprocess.PIPE if stdin_data else None,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=str(DATA_DIR),
+        env=_get_safe_env(),
     )
 
     try:
+        stdin_bytes = stdin_data.encode("utf-8") if stdin_data else None
         stdout, stderr = await asyncio.wait_for(
-            process.communicate(), timeout=timeout
+            process.communicate(input=stdin_bytes), timeout=timeout
         )
     except asyncio.TimeoutError:
         process.kill()
@@ -58,6 +127,13 @@ async def _run_file(filepath: str, timeout: int, args: list[str] | None = None) 
             "exit_code": -1,
             "success": False,
         }
+    finally:
+        # Clean up compiled binary
+        if binary_path:
+            try:
+                Path(binary_path).unlink(missing_ok=True)
+            except OSError:
+                pass
 
     return {
         "stdout": stdout.decode("utf-8", errors="replace"),
@@ -74,6 +150,7 @@ async def handle_execute_code(input_data: dict) -> str:
     code = input_data.get("code", "")
     language = input_data.get("language", "python")
     timeout = input_data.get("timeout", 30)
+    stdin_data = input_data.get("stdin_data")
 
     if not code:
         return "Error: code is required"
@@ -88,7 +165,7 @@ async def handle_execute_code(input_data: dict) -> str:
 
     try:
         tmp_path.write_text(code, encoding="utf-8")
-        result = await _run_file(str(tmp_path), timeout)
+        result = await _run_file(str(tmp_path), timeout, stdin_data=stdin_data)
         return json.dumps(result)
     finally:
         try:
@@ -107,6 +184,8 @@ def _make_header(name: str, description: str, language: str) -> str:
         return f'// Script: {name}\n// Description: {description}\n// Language: {language}\n\n'
     elif language == "bash":
         return f'#!/bin/bash\n# Script: {name}\n# Description: {description}\n\n'
+    elif language == "cpp":
+        return f'// Script: {name}\n// Description: {description}\n// Language: {language}\n\n'
     return ""
 
 
@@ -144,16 +223,26 @@ async def handle_save_script(input_data: dict) -> str:
             return "Error: userId is required for cloud storage operations"
         try:
             from . import storage_client
+            # Upload script file first
             storage_client.upload_file(
                 SCRIPTS_BUCKET, user_id, filename,
                 full_content.encode("utf-8"),
                 "text/plain"
             )
-            storage_client.upload_file(
-                SCRIPTS_BUCKET, user_id, f"{safe_name}.meta.json",
-                json.dumps(meta, indent=2).encode("utf-8"),
-                "application/json"
-            )
+            # Upload metadata — if this fails, clean up the script file
+            try:
+                storage_client.upload_file(
+                    SCRIPTS_BUCKET, user_id, f"{safe_name}.meta.json",
+                    json.dumps(meta, indent=2).encode("utf-8"),
+                    "application/json"
+                )
+            except (RuntimeError, Exception) as meta_err:
+                # Rollback: remove orphaned script file
+                try:
+                    storage_client.delete_file(SCRIPTS_BUCKET, user_id, filename)
+                except Exception:
+                    pass
+                return f"Error saving script metadata: {meta_err}"
             return json.dumps({
                 "saved": True,
                 "name": name,
@@ -162,6 +251,8 @@ async def handle_save_script(input_data: dict) -> str:
             })
         except RuntimeError as e:
             return f"Error: {e}"
+        except Exception as e:
+            return f"Error saving script: {e}"
     else:
         filepath = SCRIPTS_DIR / filename
         filepath.write_text(full_content, encoding="utf-8")
@@ -186,6 +277,7 @@ async def handle_run_script(input_data: dict) -> str:
     name = input_data.get("name", "").strip()
     args = input_data.get("args", [])
     timeout = input_data.get("timeout", 30)
+    stdin_data = input_data.get("stdin_data")
 
     if not name:
         return "Error: name is required"
@@ -225,7 +317,7 @@ async def handle_run_script(input_data: dict) -> str:
                 tmp.write(found_content)
                 tmp_path = tmp.name
 
-            result = await _run_file(tmp_path, timeout, args)
+            result = await _run_file(tmp_path, timeout, args, stdin_data=stdin_data)
             result["script"] = name
             return json.dumps(result)
         finally:
@@ -246,7 +338,7 @@ async def handle_run_script(input_data: dict) -> str:
         if not found:
             return f"Error: script '{name}' not found. Use list_scripts to see available scripts."
 
-        result = await _run_file(str(found), timeout, args)
+        result = await _run_file(str(found), timeout, args, stdin_data=stdin_data)
         result["script"] = name
         return json.dumps(result)
 
@@ -265,16 +357,18 @@ async def handle_list_scripts(input_data: dict) -> str:
             from . import storage_client
             files = storage_client.list_files(SCRIPTS_BUCKET, user_id, "")
             for f in files:
+                if not isinstance(f, dict):
+                    continue
                 name = f.get("name", "")
                 if name.endswith(".meta.json"):
                     try:
                         data = storage_client.read_file(SCRIPTS_BUCKET, user_id, name)
                         meta = json.loads(data.decode("utf-8"))
                         scripts.append(meta)
-                    except (RuntimeError, json.JSONDecodeError):
+                    except (RuntimeError, json.JSONDecodeError, Exception):
                         continue
-        except RuntimeError as e:
-            return f"Error: {e}"
+        except (RuntimeError, Exception) as e:
+            return f"Error listing scripts: {e}"
     else:
         for meta_file in sorted(SCRIPTS_DIR.glob("*.meta.json")):
             try:
@@ -352,9 +446,10 @@ TOOL_DEFS = [
     {
         "name": "execute_code",
         "description": (
-            "Execute code (Python, JavaScript, TypeScript, or Bash) in a temporary file. "
+            "Execute code (Python, JavaScript, TypeScript, Bash, or C++) in a temporary file. "
             "Returns stdout, stderr, and exit code. Good for one-off calculations, "
-            "data processing, or testing snippets. Code runs from the data/ directory."
+            "data processing, or testing snippets. Code runs from the data/ directory. "
+            "Optionally pipe JSON data to the process via stdin_data."
         ),
         "input_schema": {
             "type": "object",
@@ -365,7 +460,7 @@ TOOL_DEFS = [
                 },
                 "language": {
                     "type": "string",
-                    "enum": ["python", "bash", "javascript", "typescript"],
+                    "enum": ["python", "bash", "javascript", "typescript", "cpp"],
                     "description": "Language/runtime (default: python)",
                     "default": "python"
                 },
@@ -373,6 +468,10 @@ TOOL_DEFS = [
                     "type": "integer",
                     "description": "Timeout in seconds (default: 30, max: 120)",
                     "default": 30
+                },
+                "stdin_data": {
+                    "type": "string",
+                    "description": "Data to pipe to the process via stdin (e.g. JSON string)"
                 }
             },
             "required": ["code"]
@@ -398,7 +497,7 @@ TOOL_DEFS = [
                 },
                 "language": {
                     "type": "string",
-                    "enum": ["python", "bash", "javascript", "typescript"],
+                    "enum": ["python", "bash", "javascript", "typescript", "cpp"],
                     "description": "Language (default: python)",
                     "default": "python"
                 },
@@ -414,8 +513,8 @@ TOOL_DEFS = [
         "name": "run_script",
         "description": (
             "Run a previously saved script by name. Optionally pass command-line "
-            "arguments. Much cheaper than regenerating code — use this for "
-            "repetitive operations."
+            "arguments or pipe data via stdin. Much cheaper than regenerating "
+            "code — use this for repetitive operations."
         ),
         "input_schema": {
             "type": "object",
@@ -433,6 +532,10 @@ TOOL_DEFS = [
                     "type": "integer",
                     "description": "Timeout in seconds (default: 30)",
                     "default": 30
+                },
+                "stdin_data": {
+                    "type": "string",
+                    "description": "Data to pipe to the process via stdin (e.g. JSON string)"
                 }
             },
             "required": ["name"]

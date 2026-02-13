@@ -24,10 +24,10 @@ You are running in CLOUD MODE. The following restrictions apply:
 
 ## What To Use Instead
 - To manage skills: use \`create_skill\`, \`update_skill\`, \`read_skill\`, \`list_workspace_skills\`, \`delete_skill\`
-- To store data files: use \`write_file\` with \`workspace/\` paths (e.g. \`workspace/data/config.json\`)
-- To read your own source code: use \`read_file\` with \`python/\` paths (read-only)
+- To store and read data files: use \`write_file\` / \`read_file\` with \`workspace/\` paths (e.g. \`workspace/data/config.json\`)
+- To list your files: use \`list_files\` with \`workspace/\` paths
 
-Do NOT attempt to write to python/, modify your own source code, or install packages. These operations will fail.
+All file operations are scoped to \`workspace/\` only. You do NOT have access to local filesystem paths like \`python/\` or \`data/\`. Do NOT attempt to read, write, list, or modify files outside \`workspace/\`. These operations will fail.
 </cloud_mode_restrictions>`;
 
 // ── Types ────────────────────────────────────────────────────────────────────

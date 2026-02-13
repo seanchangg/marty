@@ -26,6 +26,13 @@ export default function SettingsPage() {
   const [hasStoredKey, setHasStoredKey] = useState(false);
   const [hasEncryptedKey, setHasEncryptedKey] = useState(false);
 
+  // Credential vault state
+  const [credentials, setCredentials] = useState<Array<{ credential_name: string; created_at: string; updated_at: string }>>([]);
+  const [credName, setCredName] = useState("");
+  const [credValue, setCredValue] = useState("");
+  const [credStatus, setCredStatus] = useState<string | null>(null);
+  const [credLoading, setCredLoading] = useState(false);
+
   // Chat settings state
   const [chatSettings, setChatSettings] = useState<ChatSettings>(DEFAULT_CHAT_SETTINGS);
   const [chatSettingsSaving, setChatSettingsSaving] = useState(false);
@@ -97,6 +104,68 @@ export default function SettingsPage() {
     await navigator.clipboard.writeText(exportedPrivateKey);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const loadCredentials = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`/api/credentials?userId=${user.id}`);
+      const data = await res.json();
+      setCredentials(data.credentials ?? []);
+    } catch {
+      // ignore load errors
+    }
+  };
+
+  useEffect(() => {
+    loadCredentials();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const handleAddCredential = async () => {
+    if (!credName.trim() || !credValue.trim() || !user) return;
+    const nameUpper = credName.trim().toUpperCase();
+    if (!/^[A-Z0-9_]{1,64}$/.test(nameUpper)) {
+      setCredStatus("Name must be uppercase letters, numbers, and underscores (max 64 chars).");
+      return;
+    }
+    setCredLoading(true);
+    setCredStatus(null);
+    try {
+      const res = await fetch("/api/credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, name: nameUpper, value: credValue }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setCredStatus(`Failed: ${data.error}`);
+      } else {
+        setCredName("");
+        setCredValue("");
+        setCredStatus(`Credential "${nameUpper}" saved.`);
+        loadCredentials();
+      }
+    } catch {
+      setCredStatus("Failed to save credential.");
+    } finally {
+      setCredLoading(false);
+    }
+  };
+
+  const handleRemoveCredential = async (name: string) => {
+    if (!user) return;
+    try {
+      await fetch("/api/credentials", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, name }),
+      });
+      setCredStatus(`Credential "${name}" removed.`);
+      loadCredentials();
+    } catch {
+      setCredStatus("Failed to remove credential.");
+    }
   };
 
   const handleSaveChatSettings = async () => {
@@ -208,6 +277,68 @@ export default function SettingsPage() {
 
           {keyStatus && (
             <p className="text-xs text-highlight">{keyStatus}</p>
+          )}
+        </div>
+      </Card>
+
+      <Card className="mb-6">
+        <h2 className="text-sm font-semibold text-text/70 mb-4">
+          Credential Vault
+        </h2>
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-text/30">
+            Store third-party API keys and tokens. Your agent can access these at runtime via the get_credential tool.
+          </p>
+
+          {credentials.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {credentials.map((cred) => (
+                <div
+                  key={cred.credential_name}
+                  className="flex items-center justify-between bg-background border border-primary/20 px-3 py-2"
+                >
+                  <span className="text-sm font-mono text-text/80">
+                    {cred.credential_name}
+                  </span>
+                  <button
+                    onClick={() => handleRemoveCredential(cred.credential_name)}
+                    className="text-xs text-text/40 hover:text-highlight transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="border-t border-primary/20 pt-3 mt-1">
+            <div className="flex flex-col gap-2">
+              <Input
+                id="cred-name"
+                label="Credential Name"
+                value={credName}
+                onChange={(e) => setCredName(e.target.value.toUpperCase())}
+                placeholder="e.g. GMAIL_API_KEY"
+              />
+              <Input
+                id="cred-value"
+                label="Value"
+                type="password"
+                value={credValue}
+                onChange={(e) => setCredValue(e.target.value)}
+                placeholder="Your API key or token"
+              />
+              <Button
+                onClick={handleAddCredential}
+                disabled={!credName.trim() || !credValue.trim() || credLoading}
+              >
+                {credLoading ? "Saving..." : "Add Credential"}
+              </Button>
+            </div>
+          </div>
+
+          {credStatus && (
+            <p className="text-xs text-highlight">{credStatus}</p>
           )}
         </div>
       </Card>

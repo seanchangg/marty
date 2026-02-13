@@ -196,10 +196,17 @@ export class LegacyToolBridge {
   }
 
   /** Execute a tool via the MCP server.
-   *  If userId is provided, it's injected into the tool arguments
-   *  so Python tools automatically get user context.
+   *  userId is always injected into tool arguments for user-scoped operations.
+   *  In cloud mode, userId is required — tools will fail without it.
    */
   async executeTool(name: string, input: Record<string, unknown>, userId?: string): Promise<string> {
+    if (!userId) {
+      const storageMode = process.env.STORAGE_MODE || "local";
+      if (storageMode === "cloud") {
+        return `Error: userId is required for tool '${name}' in cloud mode. Please reconnect or refresh the page.`;
+      }
+    }
+
     try {
       const enrichedInput = userId ? { ...input, userId } : input;
       const result = await this.rpcCall("tools/call", { name, arguments: enrichedInput });

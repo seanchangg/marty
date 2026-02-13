@@ -9,11 +9,28 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { WebSocketServer, WebSocket } from "ws";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+
+// ── Load .env.local (tsx doesn't auto-load it like Next.js does) ────────────
+const __dirnameEarly = dirname(fileURLToPath(import.meta.url));
+const envLocalPath = resolve(__dirnameEarly, "..", "..", ".env.local");
+if (existsSync(envLocalPath)) {
+  for (const line of readFileSync(envLocalPath, "utf-8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    const key = trimmed.slice(0, eqIdx).trim();
+    const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, "");
+    if (!(key in process.env)) {
+      process.env[key] = val;
+    }
+  }
+}
 import { GatewayAgent } from "./agent.js";
 import { DynoDashboardChannel } from "./channels/dyno-dashboard.js";
+import { ActivityLogger } from "./activity-logger.js";
 import { LegacyToolBridge } from "./tools/dyno-legacy.js";
 import { WorkspaceManager } from "./workspace.js";
 import { AgentManager } from "./agent-manager.js";
@@ -21,6 +38,10 @@ import { KeyStore } from "./auth/key-store.js";
 import { SupabaseVerifier } from "./auth/supabase-verifier.js";
 import { handleAdminRequest } from "./api/admin.js";
 import { handleSkillsRequest } from "./api/skills.js";
+import { handleWidgetExecRequest } from "./api/widget-exec.js";
+import { CredentialStore } from "./auth/credential-store.js";
+import { handleCredentialsRequest } from "./api/credentials.js";
+import { handleWebhookNotify } from "./api/webhooks.js";
 import { SkillRegistry } from "./skills/registry.js";
 import { SkillLoader } from "./skills/loader.js";
 import { ToolPermissions } from "./tool-permissions.js";
@@ -28,7 +49,7 @@ import { ORCHESTRATION_TOOL_DEFS, ORCHESTRATION_TOOL_NAMES, ORCHESTRATION_AUTO_A
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __dirname = __dirnameEarly;
 const CONFIG_PATH = resolve(__dirname, "..", "openclaw.json");
 
 interface GatewayConfig {
@@ -55,6 +76,9 @@ function loadConfig(): GatewayConfig {
 
 let activeConnections = 0;
 const serverStartTime = Date.now();
+
+// Per-user channel map: allows WebSocket hot-swap on page reload
+const userChannels = new Map<string, DynoDashboardChannel>();
 
 // ── Health check handler ─────────────────────────────────────────────────────
 
@@ -198,6 +222,9 @@ async function main() {
   const keyStorePath = resolve(__dirname, "..", "data", "keys.enc.json");
   const keyStore = new KeyStore(keyStoreSecret, keyStorePath);
 
+  // Initialize credential store
+  const credentialStore = new CredentialStore(keyStoreSecret);
+
   // Initialize agent manager
   const agentManager = new AgentManager(workspace, keyStore, {
     defaultModel: config.agent.model,
@@ -214,12 +241,25 @@ async function main() {
     console.log("[gateway] Supabase JWT verification disabled (no SUPABASE_JWT_SECRET)");
   }
 
-  // Load shared system prompt
+  // Initialize activity logger (optional — requires Supabase credentials)
+  let activityLogger: ActivityLogger | null = null;
+  try {
+    activityLogger = new ActivityLogger();
+    console.log("[gateway] Activity logger enabled");
+    // Run cleanup every hour
+    setInterval(() => activityLogger!.runCleanup(), 60 * 60 * 1000);
+  } catch {
+    console.log("[gateway] Activity logger disabled (missing Supabase credentials)");
+  }
+
+  // Load shared system prompt (cloud mode uses a restricted variant)
+  const storageMode = process.env.STORAGE_MODE || "local";
   let sharedSystemPrompt = "You are a helpful AI agent managed through Dyno.";
   try {
-    const contextPath = resolve(__dirname, "..", "..", "data", "context", "claude.md");
+    const promptFile = storageMode === "cloud" ? "claude-cloud.md" : "claude.md";
+    const contextPath = resolve(__dirname, "..", "..", "data", "context", promptFile);
     sharedSystemPrompt = readFileSync(contextPath, "utf-8");
-    console.log("[gateway] Loaded system prompt from data/context/claude.md");
+    console.log(`[gateway] Loaded system prompt from data/context/${promptFile} (${storageMode} mode)`);
   } catch {
     console.log("[gateway] Using default system prompt");
   }
@@ -265,9 +305,29 @@ async function main() {
     // Tool permissions API
     if (handleToolPermissions(req, res, toolPermissions)) return;
 
+    // Credentials API
+    const credHandled = await handleCredentialsRequest(req, res, { credentialStore });
+    if (credHandled) return;
+
+    // Widget execution API
+    const widgetExecHandled = await handleWidgetExecRequest(req, res, { legacyBridge });
+    if (widgetExecHandled) return;
+
     // Skills API
     const skillsHandled = await handleSkillsRequest(req, res, { registry: skillRegistry });
     if (skillsHandled) return;
+
+    // Internal webhook notification (from Next.js → Gateway)
+    const webhookInternalSecret = process.env.WEBHOOK_INTERNAL_SECRET || keyStoreSecret;
+    const webhookHandled = await handleWebhookNotify(req, res, {
+      agentManager,
+      userChannels,
+      legacyBridge,
+      activityLogger,
+      toolPermissions,
+      internalSecret: webhookInternalSecret,
+    });
+    if (webhookHandled) return;
 
     // Admin API
     const handled = await handleAdminRequest(req, res, { workspace, agentManager });
@@ -330,14 +390,31 @@ async function main() {
     if (authenticatedUserId) {
       agent.setUserId(authenticatedUserId);
     }
+    agent.setActivityLogger(activityLogger);
     agent.initOrchestration();
 
-    console.log(
-      `[gateway] New connection (total: ${activeConnections})` +
-      (authenticatedUserId ? ` user: ${authenticatedUserId}` : " (unauthenticated)")
-    );
+    // Reuse existing channel on reconnect (hot-swap WebSocket)
+    // so in-flight agent work continues to the new frontend tab.
+    let channel: DynoDashboardChannel;
+    const existingChannel = authenticatedUserId ? userChannels.get(authenticatedUserId) : null;
 
-    const channel = new DynoDashboardChannel(ws, agent);
+    if (existingChannel) {
+      channel = existingChannel;
+      channel.replaceWebSocket(ws);
+      console.log(
+        `[gateway] Reconnected user ${authenticatedUserId} (total: ${activeConnections})` +
+        (channel.hasPendingWork() ? " — resuming in-flight work" : "")
+      );
+    } else {
+      channel = new DynoDashboardChannel(ws, agent, activityLogger);
+      if (authenticatedUserId) {
+        userChannels.set(authenticatedUserId, channel);
+      }
+      console.log(
+        `[gateway] New connection (total: ${activeConnections})` +
+        (authenticatedUserId ? ` user: ${authenticatedUserId}` : " (unauthenticated)")
+      );
+    }
 
     ws.on("message", async (raw: Buffer) => {
       try {
@@ -362,7 +439,12 @@ async function main() {
     });
 
     ws.on("close", () => {
-      channel.cleanup();
+      // Don't cleanup if the user might reconnect — only decrement counter.
+      // The channel stays alive so in-flight work can resume on reconnect.
+      // For unauthenticated connections, cleanup immediately.
+      if (!authenticatedUserId) {
+        channel.cleanup();
+      }
       activeConnections--;
       console.log(`[gateway] Connection closed (total: ${activeConnections})`);
     });

@@ -10,6 +10,8 @@ const CodeBlockWidget = lazy(() => import("@/components/widgets/CodeBlockWidget"
 const ImageWidget = lazy(() => import("@/components/widgets/ImageWidget"));
 const TableWidget = lazy(() => import("@/components/widgets/TableWidget"));
 const HtmlWidget = lazy(() => import("@/components/widgets/HtmlWidget"));
+const VaultWidget = lazy(() => import("@/components/widgets/VaultWidget"));
+const AgentControlWidget = lazy(() => import("@/components/widgets/AgentControlWidget"));
 
 export function registerBuiltInWidgets() {
   registerWidget({
@@ -19,8 +21,8 @@ export function registerBuiltInWidgets() {
     defaultH: 8,
     minW: 4,
     minH: 4,
-    maxW: 12,
-    maxH: 20,
+    maxW: 48,
+    maxH: 40,
     component: ChatWidget as React.ComponentType<Record<string, unknown>>,
   });
 
@@ -31,7 +33,7 @@ export function registerBuiltInWidgets() {
     defaultH: 2,
     minW: 2,
     minH: 2,
-    maxW: 6,
+    maxW: 24,
     maxH: 4,
     component: StatCardWidget as React.ComponentType<Record<string, unknown>>,
   });
@@ -43,8 +45,8 @@ export function registerBuiltInWidgets() {
     defaultH: 5,
     minW: 4,
     minH: 3,
-    maxW: 12,
-    maxH: 12,
+    maxW: 48,
+    maxH: 40,
     component: MemoryWidget as React.ComponentType<Record<string, unknown>>,
   });
 
@@ -55,8 +57,8 @@ export function registerBuiltInWidgets() {
     defaultH: 5,
     minW: 3,
     minH: 3,
-    maxW: 12,
-    maxH: 12,
+    maxW: 48,
+    maxH: 40,
     component: ScreenshotWidget as React.ComponentType<Record<string, unknown>>,
   });
 
@@ -67,8 +69,8 @@ export function registerBuiltInWidgets() {
     defaultH: 4,
     minW: 2,
     minH: 2,
-    maxW: 12,
-    maxH: 20,
+    maxW: 48,
+    maxH: 40,
     component: MarkdownWidget as React.ComponentType<Record<string, unknown>>,
   });
 
@@ -79,8 +81,8 @@ export function registerBuiltInWidgets() {
     defaultH: 4,
     minW: 3,
     minH: 2,
-    maxW: 12,
-    maxH: 16,
+    maxW: 48,
+    maxH: 40,
     component: CodeBlockWidget as React.ComponentType<Record<string, unknown>>,
   });
 
@@ -91,8 +93,8 @@ export function registerBuiltInWidgets() {
     defaultH: 4,
     minW: 2,
     minH: 2,
-    maxW: 12,
-    maxH: 12,
+    maxW: 48,
+    maxH: 40,
     component: ImageWidget as React.ComponentType<Record<string, unknown>>,
   });
 
@@ -103,8 +105,8 @@ export function registerBuiltInWidgets() {
     defaultH: 4,
     minW: 3,
     minH: 2,
-    maxW: 12,
-    maxH: 16,
+    maxW: 48,
+    maxH: 40,
     component: TableWidget as React.ComponentType<Record<string, unknown>>,
   });
 
@@ -115,8 +117,32 @@ export function registerBuiltInWidgets() {
     defaultH: 5,
     minW: 2,
     minH: 2,
-    maxW: 12,
-    maxH: 20,
+    maxW: 48,
+    maxH: 40,
     component: HtmlWidget as React.ComponentType<Record<string, unknown>>,
+  });
+
+  registerWidget({
+    type: "vault",
+    label: "Vault",
+    defaultW: 5,
+    defaultH: 5,
+    minW: 3,
+    minH: 3,
+    maxW: 48,
+    maxH: 40,
+    component: VaultWidget as React.ComponentType<Record<string, unknown>>,
+  });
+
+  registerWidget({
+    type: "agent-control",
+    label: "Agent Control",
+    defaultW: 8,
+    defaultH: 7,
+    minW: 6,
+    minH: 5,
+    maxW: 48,
+    maxH: 40,
+    component: AgentControlWidget as React.ComponentType<Record<string, unknown>>,
   });
 }

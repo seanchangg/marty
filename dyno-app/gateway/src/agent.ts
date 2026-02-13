@@ -7,9 +7,10 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { v4 as uuidv4 } from "uuid";
+
 import type { LegacyToolBridge } from "./tools/dyno-legacy.js";
 import type { ToolPermissions } from "./tool-permissions.js";
+import type { ActivityLogger } from "./activity-logger.js";
 import {
   OrchestrationHandler,
   ORCHESTRATION_TOOL_DEFS,
@@ -73,7 +74,7 @@ interface AgentConfig {
 const DEFAULT_MODEL = "claude-sonnet-4-5-20250929";
 const DEFAULT_MAX_TOKENS = 8192;
 const DEFAULT_MAX_ITERATIONS = 15;
-const TOOL_RESULT_HISTORY_LIMIT = 4000;
+const TOOL_RESULT_HISTORY_LIMIT = 30000;
 const COST_PER_INPUT_TOKEN = 3 / 1_000_000;
 const COST_PER_OUTPUT_TOKEN = 15 / 1_000_000;
 
@@ -128,6 +129,7 @@ export class GatewayAgent {
   private sendFn: SendFn | null = null;
   private userId: string | null = null;
   private toolPerms: ToolPermissions | null = null;
+  private activityLogger: ActivityLogger | null = null;
 
   constructor(config?: Partial<AgentConfig>) {
     this.config = {
@@ -183,15 +185,31 @@ export class GatewayAgent {
     this.toolPerms = perms;
   }
 
+  /** Set the activity logger. Propagates to orchestration handler. */
+  setActivityLogger(logger: ActivityLogger | null) {
+    this.activityLogger = logger;
+    if (this.orchestration) {
+      this.orchestration.setActivityLogger(logger);
+    }
+  }
+
   /** Initialize orchestration handler (call after setting bridge, send, userId). */
   initOrchestration() {
     if (!this.sendFn) return;
+
+    // On reconnect, just update the send function to preserve running children
+    if (this.orchestration) {
+      this.orchestration.updateSendFn(this.sendFn);
+      return;
+    }
+
     this.orchestration = new OrchestrationHandler({
       send: this.sendFn,
       systemPrompt: this.systemPrompt,
       toolDescriptionsAppendix: this.toolDescriptionsAppendix,
       skillsPrompt: this.skillsPrompt,
       userId: this.userId,
+      activityLogger: this.activityLogger,
       getAgentTools: () => this.getLegacyTools(),
       getAutoApproved: () => this.getLegacyReadOnlyTools(),
       executeLegacyTool: (name, input) => this.executeLegacyTool(name, input),
@@ -251,6 +269,32 @@ export class GatewayAgent {
       return this.toolPerms.isAutoApproved(toolName, defaultAuto);
     }
     return defaultAuto;
+  }
+
+  /** Build a dynamic tool permissions block reflecting actual auto/manual settings. */
+  private buildToolPermissionsBlock(): string {
+    const tools = this.getTools();
+    if (tools.length === 0) return "";
+
+    const autoTools: string[] = [];
+    const manualTools: string[] = [];
+    for (const t of tools) {
+      if (this.isAutoApproved(t.name)) {
+        autoTools.push(t.name);
+      } else {
+        manualTools.push(t.name);
+      }
+    }
+
+    const lines = ["<tool_permissions>"];
+    if (manualTools.length > 0) {
+      lines.push(`Tools that REQUIRE user approval before execution: ${manualTools.join(", ")}`);
+    }
+    if (autoTools.length > 0) {
+      lines.push(`Tools that run automatically (no approval needed): ${autoTools.join(", ")}`);
+    }
+    lines.push("</tool_permissions>");
+    return lines.join("\n");
   }
 
   // ── Chat (Phase 1 lightweight → Phase 2 full) ─────────────────────────────
@@ -348,9 +392,10 @@ export class GatewayAgent {
     await onEvent("thinking", { text: `Activating tools: ${reason}` });
 
     const skillsBlock = this.skillsPrompt ? `\n\n${this.skillsPrompt}` : "";
+    const permsBlock = `\n\n${this.buildToolPermissionsBlock()}`;
     const fullSystem = systemPrompt
-      ? `${systemPrompt}\n\n${this.toolDescriptionsAppendix}${skillsBlock}`
-      : `${this.systemPrompt}\n\n${this.toolDescriptionsAppendix}${skillsBlock}`;
+      ? `${systemPrompt}\n\n${this.toolDescriptionsAppendix}${skillsBlock}${permsBlock}`
+      : `${this.systemPrompt}\n\n${this.toolDescriptionsAppendix}${skillsBlock}${permsBlock}`;
 
     // Build Phase 2 history with Phase 1's tool call
     const phase2History: Anthropic.MessageParam[] = [...chatHistory];
@@ -404,7 +449,8 @@ export class GatewayAgent {
     }
 
     const skillsBlock = this.skillsPrompt ? `\n\n${this.skillsPrompt}` : "";
-    let systemPrompt = `${this.systemPrompt}\n\n${this.toolDescriptionsAppendix}${skillsBlock}`;
+    const permsBlock = `\n\n${this.buildToolPermissionsBlock()}`;
+    let systemPrompt = `${this.systemPrompt}\n\n${this.toolDescriptionsAppendix}${skillsBlock}${permsBlock}`;
     if (userId) {
       systemPrompt += `\n\nThe current user's ID is: ${userId}`;
     }
@@ -613,7 +659,7 @@ export class GatewayAgent {
             await onEvent("tool_call", { id: block.id, tool: block.name, input: block.input as Record<string, unknown> });
             const result = await this.executeTool(block.name, block.input as Record<string, unknown>, apiKey, onEvent);
             const isError = result.startsWith("Error");
-            await onEvent("tool_result", { id: block.id, tool: block.name, result: result.slice(0, 2000), isError });
+            await onEvent("tool_result", { id: block.id, tool: block.name, result: result.slice(0, 4000), isError });
             return {
               type: "tool_result" as const,
               tool_use_id: block.id,

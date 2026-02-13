@@ -132,7 +132,7 @@ TOOL_DEFS = [
             "Get the current dashboard layout — returns all widgets with their IDs, "
             "types, grid positions (x, y), sizes (w, h), and props. Use this before "
             "moving, removing, or rearranging widgets so you know what exists and "
-            "where everything is. The dashboard is a 12-column grid with 60px row height."
+            "where everything is. The dashboard is a 48-column infinite canvas grid with 60px row height."
         ),
         "input_schema": {
             "type": "object",
@@ -142,8 +142,8 @@ TOOL_DEFS = [
     {
         "name": "ui_action",
         "description": (
-            "Mutate the dashboard layout. Use get_dashboard_layout first to see "
-            "current widgets and their IDs.\n\n"
+            "Mutate the dashboard layout. ALWAYS call get_dashboard_layout first to see "
+            "current widgets, their IDs, and positions before making changes.\n\n"
             "Actions:\n"
             "- add: Create a new widget. Requires widgetType. Optional: position, size, props, sessionId.\n"
             "- remove: Delete a widget by its widgetId.\n"
@@ -151,20 +151,35 @@ TOOL_DEFS = [
             "- move: Reposition a widget on the grid. Requires position {x, y}.\n"
             "- resize: Change a widget's dimensions. Requires size {w, h}.\n"
             "- reset: Restore the default layout (widgetId can be 'default').\n\n"
-            "Grid: 12 columns, rows are 60px tall, 16px gaps.\n\n"
+            "Grid: 48 columns, rows are 60px tall, 16px gaps. Infinite canvas — "
+            "no compaction, widgets stay exactly where placed. User can pan and zoom.\n\n"
+            "LAYOUT GUIDELINES — follow these to produce clean, professional dashboards:\n"
+            "- Default widgets are centered around column 16. Place new widgets near existing ones.\n"
+            "- ALWAYS call get_dashboard_layout first so you know where existing widgets are.\n"
+            "- Align widgets to a visual grid: line up edges, use consistent spacing.\n"
+            "- Group related widgets together (e.g. stat cards in a row, charts side by side).\n"
+            "- Leave 1-column gaps between widgets for breathing room.\n"
+            "- Stat cards: best as a horizontal row, 3-5 cols wide, 2 rows tall.\n"
+            "- Content widgets (markdown, code, table, html): 8-12 cols wide for readability.\n"
+            "- Charts/visualizations (html widget): 8-14 cols wide, 5-8 rows tall.\n"
+            "- Don't stack everything vertically — use horizontal space. Think newspaper columns.\n"
+            "- A typical good layout: main content left (cols 16-27), sidebar of stats/info right (cols 28-33).\n"
+            "- When adding multiple widgets, plan the full layout first, then place them all.\n\n"
             "Widget types and their default/min sizes:\n"
-            "- chat: 7x8 (min 4x4, max 12x20) — agent conversation\n"
-            "- stat-card: 3x2 (min 2x2, max 6x4) — metrics display. Props: {title, dataSource}. "
+            "- chat: 7w x 8h (min 4x4) — agent conversation\n"
+            "- stat-card: 3w x 2h (min 2x2) — single metric display. Props: {title, dataSource}. "
             "dataSource options: 'agent-status', 'sessions', 'token-usage', 'cost'\n"
-            "- memory-table: 7x5 (min 4x3, max 12x12) — memory viewer\n"
-            "- screenshot-gallery: 5x5 (min 3x3, max 12x12) — screenshot browser\n"
-            "- markdown: 4x4 (min 2x2, max 12x20) — render markdown. Props: {content}\n"
-            "- code-block: 6x4 (min 3x2, max 12x16) — display code. Props: {code, language}\n"
-            "- image: 4x4 (min 2x2, max 12x12) — display image. Props: {src, alt}\n"
-            "- table: 6x4 (min 3x2, max 12x16) — tabular data. Props: {columns, rows}\n"
-            "- html: 6x5 (min 2x2, max 12x20) — render arbitrary HTML/JS in sandboxed iframe. "
+            "- memory-table: 7w x 5h (min 4x3) — memory viewer\n"
+            "- screenshot-gallery: 5w x 5h (min 3x3) — screenshot browser\n"
+            "- vault: 5w x 5h (min 3x3) — document vault file selector for context injection\n"
+            "- markdown: 4w x 4h (min 2x2) — render markdown. Props: {content}\n"
+            "- code-block: 6w x 4h (min 3x2) — display code. Props: {code, language}\n"
+            "- image: 4w x 4h (min 2x2) — display image. Props: {src, alt}\n"
+            "- table: 6w x 4h (min 3x2) — tabular data. Props: {columns, rows}\n"
+            "- html: 6w x 5h (min 2x2) — render arbitrary HTML/JS in sandboxed iframe. "
             "Props: {html} for inline HTML, or {src} for a URL (e.g. /api/widget-html/chart.html). "
             "Bot can write HTML files to data/widgets/ then reference them here.\n"
+            "- agent-control: 8w x 7h (min 6x5) — agent monitoring dashboard\n"
         ),
         "input_schema": {
             "type": "object",
@@ -186,14 +201,15 @@ TOOL_DEFS = [
                     "type": "string",
                     "enum": [
                         "chat", "stat-card", "memory-table", "screenshot-gallery",
-                        "markdown", "code-block", "image", "table", "html"
+                        "vault", "markdown", "code-block", "image", "table", "html",
+                        "agent-control"
                     ],
                     "description": "Widget type (required for 'add')"
                 },
                 "position": {
                     "type": "object",
                     "properties": {
-                        "x": {"type": "integer", "description": "Column (0-11)"},
+                        "x": {"type": "integer", "description": "Column (0-47). Default widgets start around column 16."},
                         "y": {"type": "integer", "description": "Row"}
                     },
                     "description": "Grid position (for 'add' and 'move')"
@@ -201,7 +217,7 @@ TOOL_DEFS = [
                 "size": {
                     "type": "object",
                     "properties": {
-                        "w": {"type": "integer", "description": "Width in columns (1-12)"},
+                        "w": {"type": "integer", "description": "Width in columns (1-48)"},
                         "h": {"type": "integer", "description": "Height in rows"}
                     },
                     "description": "Grid size (for 'add' and 'resize')"

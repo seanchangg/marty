@@ -7,6 +7,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { v4 as uuidv4 } from "uuid";
+import type { ActivityLogger } from "./activity-logger.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -128,10 +129,11 @@ export const ORCHESTRATION_TOOL_DEFS: Anthropic.Tool[] = [
   {
     name: "get_dashboard_layout",
     description:
-      "Get the current dashboard layout — returns all widgets with their IDs, " +
-      "types, grid positions (x, y), sizes (w, h), and props. Use this before " +
-      "moving, removing, or rearranging widgets so you know what exists and " +
-      "where everything is. The dashboard is a 12-column grid with 60px row height.",
+      "Get the current dashboard layout — returns all tabs with their widgets, IDs, " +
+      "types, grid positions (x, y), sizes (w, h), and props. The dashboard uses a " +
+      "multi-tab system. Use this before moving, removing, or rearranging widgets so " +
+      "you know what exists and where everything is. The dashboard is a 48-column " +
+      "infinite canvas grid with 60px row height.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -140,50 +142,73 @@ export const ORCHESTRATION_TOOL_DEFS: Anthropic.Tool[] = [
   {
     name: "ui_action",
     description:
-      "Mutate the dashboard layout. Use get_dashboard_layout first to see " +
-      "current widgets and their IDs.\n\n" +
-      "Actions:\n" +
-      "- add: Create a new widget. Requires widgetType. Optional: position, size, props, sessionId.\n" +
+      "Mutate the dashboard layout. ALWAYS call get_dashboard_layout first to see " +
+      "current widgets, their IDs, and positions before making changes.\n\n" +
+      "Widget actions (target active tab by default, or specify tabId):\n" +
+      "- add: Create a new widget. Requires widgetType. Optional: position, size, props, sessionId, tabId.\n" +
       "- remove: Delete a widget by its widgetId.\n" +
       "- update: Change a widget's props (e.g. title, dataSource). Merges with existing props.\n" +
       "- move: Reposition a widget on the grid. Requires position {x, y}.\n" +
       "- resize: Change a widget's dimensions. Requires size {w, h}.\n" +
       "- reset: Restore the default layout (widgetId can be 'default').\n\n" +
-      "Grid: 12 columns, rows are 60px tall, 16px gaps.\n\n" +
+      "Tab actions (widgetId can be empty string for tab-only ops):\n" +
+      "- tab_create: Create a new tab. Optional: tabLabel (default 'New Tab'). Auto-switches to it.\n" +
+      "- tab_delete: Delete a tab by tabId (min 1 tab). Falls back to first remaining tab.\n" +
+      "- tab_rename: Rename a tab. Requires tabId and tabLabel.\n" +
+      "- tab_reorder: Move a tab to a new position. Requires tabId and tabIndex.\n" +
+      "- tab_switch: Switch to a tab by tabId.\n" +
+      "- move_to_tab: Move a widget (by widgetId) to a different tab (by tabId).\n\n" +
+      "Grid: 48 columns, rows are 60px tall, 16px gaps. Infinite canvas — " +
+      "no compaction, widgets stay exactly where placed. User can pan and zoom.\n\n" +
+      "LAYOUT GUIDELINES — follow these to produce clean, professional dashboards:\n" +
+      "- Default widgets are centered around column 16. Place new widgets near existing ones.\n" +
+      "- ALWAYS call get_dashboard_layout first so you know where existing widgets are.\n" +
+      "- Align widgets to a visual grid: line up edges, use consistent spacing.\n" +
+      "- Group related widgets together (e.g. stat cards in a row, charts side by side).\n" +
+      "- Leave 1-column gaps between widgets for breathing room.\n" +
+      "- Stat cards: best as a horizontal row, 3-5 cols wide, 2 rows tall.\n" +
+      "- Content widgets (markdown, code, table, html): 8-12 cols wide for readability.\n" +
+      "- Charts/visualizations (html widget): 8-14 cols wide, 5-8 rows tall.\n" +
+      "- Don't stack everything vertically — use horizontal space. Think newspaper columns.\n" +
+      "- A typical good layout: main content left (cols 16-27), sidebar of stats/info right (cols 28-33).\n" +
+      "- When adding multiple widgets, plan the full layout first, then place them all.\n" +
+      "- Use tabs to organize related widgets (e.g. 'Monitoring', 'Reports', 'Dev Tools').\n\n" +
       "Widget types and their default/min sizes:\n" +
-      "- chat: 7x8 (min 4x4, max 12x20) — agent conversation\n" +
-      "- stat-card: 3x2 (min 2x2, max 6x4) — metrics display. Props: {title, dataSource}. " +
+      "- chat: 7w x 8h (min 4x4) — agent conversation\n" +
+      "- stat-card: 3w x 2h (min 2x2) — single metric display. Props: {title, dataSource}. " +
       "dataSource options: 'agent-status', 'sessions', 'token-usage', 'cost'\n" +
-      "- memory-table: 7x5 (min 4x3, max 12x12) — memory viewer\n" +
-      "- screenshot-gallery: 5x5 (min 3x3, max 12x12) — screenshot browser\n" +
-      "- markdown: 4x4 (min 2x2, max 12x20) — render markdown. Props: {content}\n" +
-      "- code-block: 6x4 (min 3x2, max 12x16) — display code. Props: {code, language}\n" +
-      "- image: 4x4 (min 2x2, max 12x12) — display image. Props: {src, alt}\n" +
-      "- table: 6x4 (min 3x2, max 12x16) — tabular data. Props: {columns, rows}\n" +
-      "- html: 6x5 (min 2x2, max 12x20) — render arbitrary HTML/JS in sandboxed iframe. " +
+      "- memory-table: 7w x 5h (min 4x3) — memory viewer\n" +
+      "- screenshot-gallery: 5w x 5h (min 3x3) — screenshot browser\n" +
+      "- vault: 5w x 5h (min 3x3) — document vault file selector for context injection\n" +
+      "- markdown: 4w x 4h (min 2x2) — render markdown. Props: {content}\n" +
+      "- code-block: 6w x 4h (min 3x2) — display code. Props: {code, language}\n" +
+      "- image: 4w x 4h (min 2x2) — display image. Props: {src, alt}\n" +
+      "- table: 6w x 4h (min 3x2) — tabular data. Props: {columns, rows}\n" +
+      "- html: 6w x 5h (min 2x2) — render arbitrary HTML/JS in sandboxed iframe. " +
       "Props: {html} for inline HTML, or {src} for a URL. " +
-      "Bot can write HTML files to data/widgets/ then reference them here.",
+      "Bot can write HTML files to data/widgets/ then reference them here.\n" +
+      "- agent-control: 8w x 7h (min 6x5) — agent monitoring dashboard\n",
     input_schema: {
       type: "object" as const,
       properties: {
         action: {
           type: "string",
-          enum: ["add", "remove", "update", "move", "resize", "reset"],
+          enum: ["add", "remove", "update", "move", "resize", "reset", "tab_create", "tab_delete", "tab_rename", "tab_reorder", "tab_switch", "move_to_tab"],
           description: "Action to perform on the dashboard",
         },
         widgetId: {
           type: "string",
-          description: "Target widget ID. For 'add', use a unique descriptive ID.",
+          description: "Target widget ID. For 'add', use a unique descriptive ID. Can be empty for tab-only actions.",
         },
         widgetType: {
           type: "string",
-          enum: ["chat", "stat-card", "memory-table", "screenshot-gallery", "markdown", "code-block", "image", "table", "html"],
+          enum: ["chat", "stat-card", "memory-table", "screenshot-gallery", "vault", "markdown", "code-block", "image", "table", "html", "agent-control"],
           description: "Widget type (required for 'add')",
         },
         position: {
           type: "object",
           properties: {
-            x: { type: "integer", description: "Column (0-11)" },
+            x: { type: "integer", description: "Column (0-47). Default widgets start around column 16." },
             y: { type: "integer", description: "Row" },
           },
           description: "Grid position (for 'add' and 'move')",
@@ -191,7 +216,7 @@ export const ORCHESTRATION_TOOL_DEFS: Anthropic.Tool[] = [
         size: {
           type: "object",
           properties: {
-            w: { type: "integer", description: "Width in columns (1-12)" },
+            w: { type: "integer", description: "Width in columns (1-48)" },
             h: { type: "integer", description: "Height in rows" },
           },
           description: "Grid size (for 'add' and 'resize')",
@@ -204,8 +229,20 @@ export const ORCHESTRATION_TOOL_DEFS: Anthropic.Tool[] = [
           type: "string",
           description: "Session ID to link to (for chat widgets)",
         },
+        tabId: {
+          type: "string",
+          description: "Target tab ID. For widget ops, targets this tab instead of active tab. For tab ops, identifies the tab to act on.",
+        },
+        tabLabel: {
+          type: "string",
+          description: "Tab label (for tab_create, tab_rename)",
+        },
+        tabIndex: {
+          type: "integer",
+          description: "Target index for tab_reorder (0-based)",
+        },
       },
-      required: ["action", "widgetId"],
+      required: ["action"],
     },
   },
 ];
@@ -221,6 +258,13 @@ export const ORCHESTRATION_TOOL_NAMES = new Set(
   ORCHESTRATION_TOOL_DEFS.map((t) => t.name)
 );
 
+/** Tools that child agents are allowed to use (dashboard control, no spawning). */
+const CHILD_ALLOWED_ORCHESTRATION = new Set(["get_dashboard_layout", "ui_action"]);
+
+export const CHILD_ORCHESTRATION_TOOL_DEFS = ORCHESTRATION_TOOL_DEFS.filter(
+  (t) => CHILD_ALLOWED_ORCHESTRATION.has(t.name)
+);
+
 // ── Orchestration handler ────────────────────────────────────────────────────
 
 export class OrchestrationHandler {
@@ -230,6 +274,7 @@ export class OrchestrationHandler {
   private toolDescriptionsAppendix: string;
   private skillsPrompt: string;
   private userId: string | null;
+  private activityLogger: ActivityLogger | null;
   private getAgentTools: () => Anthropic.Tool[];
   private getAutoApproved: () => Set<string>;
   private executeLegacyTool: (name: string, input: Record<string, unknown>) => Promise<string>;
@@ -240,6 +285,7 @@ export class OrchestrationHandler {
     toolDescriptionsAppendix: string;
     skillsPrompt: string;
     userId: string | null;
+    activityLogger?: ActivityLogger | null;
     getAgentTools: () => Anthropic.Tool[];
     getAutoApproved: () => Set<string>;
     executeLegacyTool: (name: string, input: Record<string, unknown>) => Promise<string>;
@@ -249,14 +295,39 @@ export class OrchestrationHandler {
     this.toolDescriptionsAppendix = opts.toolDescriptionsAppendix;
     this.skillsPrompt = opts.skillsPrompt;
     this.userId = opts.userId;
+    this.activityLogger = opts.activityLogger ?? null;
     this.getAgentTools = opts.getAgentTools;
     this.getAutoApproved = opts.getAutoApproved;
     this.executeLegacyTool = opts.executeLegacyTool;
   }
 
+  /** Update the send function (e.g. after WebSocket reconnect). */
+  updateSendFn(send: SendFn) {
+    this.send = send;
+  }
+
   /** Update the userId (called when it arrives late, e.g. from message). */
   setUserId(userId: string) {
     this.userId = userId;
+  }
+
+  /** Set the activity logger for persistent session/tool tracking. */
+  setActivityLogger(logger: ActivityLogger | null) {
+    this.activityLogger = logger;
+  }
+
+  /** Log a child session end (completed/error/terminated) to the activity logger. */
+  private logSessionEnd(child: ChildSession) {
+    if (!this.activityLogger || !this.userId) return;
+    this.activityLogger.upsertChildSession({
+      userId: this.userId,
+      sessionId: child.id,
+      model: child.model,
+      status: child.status,
+      tokensIn: child.tokensIn,
+      tokensOut: child.tokensOut,
+      completedAt: new Date().toISOString(),
+    });
   }
 
   /** Check if a tool name is an orchestration tool. */
@@ -334,11 +405,23 @@ export class OrchestrationHandler {
       prompt: prompt.slice(0, 200),
     });
 
+    // Persist child session creation
+    if (this.activityLogger && this.userId) {
+      this.activityLogger.upsertChildSession({
+        userId: this.userId,
+        sessionId,
+        model,
+        prompt: prompt.slice(0, 2000),
+        status: "running",
+      });
+    }
+
     // Run child in background
     this.runChildLoop(child, apiKey, onEvent).catch((err) => {
       console.error(`[orchestration] Child ${sessionId} error:`, err);
       child.status = "error";
       child.result = err instanceof Error ? err.message : String(err);
+      this.logSessionEnd(child);
     });
 
     return JSON.stringify({ sessionId, status: "running", model });
@@ -351,8 +434,11 @@ export class OrchestrationHandler {
   ): Promise<void> {
     const client = new Anthropic({ apiKey });
 
-    // Child gets standard tools (no orchestration — no recursive spawning)
-    const childTools = this.getAgentTools();
+    // Child gets legacy tools (minus orchestration dupes) + dashboard orchestration tools (no spawning)
+    const filteredLegacy = this.getAgentTools().filter(
+      (t) => !CHILD_ALLOWED_ORCHESTRATION.has(t.name)
+    );
+    const childTools = [...filteredLegacy, ...CHILD_ORCHESTRATION_TOOL_DEFS];
     const skillsBlock = this.skillsPrompt ? `\n\n${this.skillsPrompt}` : "";
     const childSystemText = this.userId
       ? `${this.systemPrompt}\n\n${this.toolDescriptionsAppendix}${skillsBlock}\n\nThe current user's ID is: ${this.userId}`
@@ -373,7 +459,8 @@ export class OrchestrationHandler {
       return null;
     };
 
-    for (let iteration = 0; iteration < 15; iteration++) {
+    const maxIterations = child.model.includes("opus") ? 100 : 15;
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
       if (child.cancelled) {
         child.status = "terminated";
         return;
@@ -422,6 +509,7 @@ export class OrchestrationHandler {
           tokensOut: child.tokensOut,
           model: child.model,
         });
+        this.logSessionEnd(child);
         return;
       }
 
@@ -433,12 +521,15 @@ export class OrchestrationHandler {
 
       for (const block of toolBlocks) {
         await childOnEvent("tool_call", { id: block.id, tool: block.name, input: block.input as Record<string, unknown> });
-        const result = await this.executeLegacyTool(block.name, block.input as Record<string, unknown>);
-        await childOnEvent("tool_result", { id: block.id, tool: block.name, result: result.slice(0, 2000) });
+        // Route dashboard tools through orchestration, everything else through legacy bridge
+        const result = CHILD_ALLOWED_ORCHESTRATION.has(block.name)
+          ? await this.execute(block.name, block.input as Record<string, unknown>, apiKey, childOnEvent)
+          : await this.executeLegacyTool(block.name, block.input as Record<string, unknown>);
+        await childOnEvent("tool_result", { id: block.id, tool: block.name, result: result.slice(0, 4000) });
         toolResults.push({
           type: "tool_result",
           tool_use_id: block.id,
-          content: result.slice(0, 4000),
+          content: result.slice(0, 30000),
         });
       }
 
@@ -472,6 +563,7 @@ export class OrchestrationHandler {
       tokensOut: child.tokensOut,
       model: child.model,
     });
+    this.logSessionEnd(child);
   }
 
   // ── send_to_session ─────────────────────────────────────────────────────
@@ -590,6 +682,7 @@ export class OrchestrationHandler {
       tokensOut: child.tokensOut,
       model: child.model,
     });
+    this.logSessionEnd(child);
 
     return JSON.stringify({ sessionId, status: "terminated" });
   }
@@ -604,12 +697,40 @@ export class OrchestrationHandler {
         signal: AbortSignal.timeout(5000),
       });
       const data = await res.json() as Record<string, unknown>;
-      const widgets = (data.widgets || []) as Record<string, unknown>[];
 
+      // Handle TabbedLayout v2
+      if (data.version === 2 && Array.isArray(data.tabs)) {
+        const tabs = (data.tabs as Record<string, unknown>[]).map((tab) => {
+          const widgets = (tab.widgets as Record<string, unknown>[]) || [];
+          return {
+            id: tab.id,
+            label: tab.label,
+            widgets: widgets.map((w) => ({
+              id: w.id,
+              type: w.type,
+              position: { x: w.x || 0, y: w.y || 0 },
+              size: { w: w.w || 4, h: w.h || 4 },
+              ...(w.props ? { props: w.props } : {}),
+              ...(w.sessionId ? { sessionId: w.sessionId } : {}),
+            })),
+            widgetCount: widgets.length,
+          };
+        });
+
+        return JSON.stringify({
+          activeTabId: data.activeTabId,
+          tabs,
+          tabCount: tabs.length,
+          grid: { columns: 48, rowHeight: 60, gap: 16, note: "Infinite canvas. Default widgets centered around column 16." },
+        });
+      }
+
+      // Legacy fallback: flat widget list
+      const widgets = (data.widgets || []) as Record<string, unknown>[];
       if (widgets.length === 0) {
         return JSON.stringify({
-          widgets: [],
-          count: 0,
+          tabs: [],
+          tabCount: 0,
           note: "Dashboard is empty. Use ui_action with action='reset' to restore defaults.",
         });
       }
@@ -624,9 +745,10 @@ export class OrchestrationHandler {
       }));
 
       return JSON.stringify({
-        widgets: summary,
-        count: summary.length,
-        grid: { columns: 12, rowHeight: 60, gap: 16 },
+        activeTabId: "main",
+        tabs: [{ id: "main", label: "Main", widgets: summary, widgetCount: summary.length }],
+        tabCount: 1,
+        grid: { columns: 48, rowHeight: 60, gap: 16, note: "Infinite canvas. Default widgets centered around column 16." },
       });
     } catch (err) {
       return JSON.stringify({ error: `Could not reach dashboard API: ${err}` });
@@ -637,9 +759,15 @@ export class OrchestrationHandler {
 
   private handleUIAction(input: Record<string, unknown>): string {
     const action = input.action as string;
-    const widgetId = input.widgetId as string;
+    const widgetId = (input.widgetId as string) || "";
 
-    if (!action || !widgetId) return "Error: action and widgetId are required";
+    if (!action) return "Error: action is required";
+
+    // Tab-only actions don't require widgetId
+    const tabActions = new Set(["tab_create", "tab_delete", "tab_rename", "tab_reorder", "tab_switch"]);
+    if (!tabActions.has(action) && action !== "move_to_tab" && !widgetId) {
+      return "Error: widgetId is required for widget actions";
+    }
 
     this.send({
       type: "ui_mutation",
@@ -650,8 +778,11 @@ export class OrchestrationHandler {
       size: input.size,
       props: input.props,
       sessionId: input.sessionId,
+      tabId: input.tabId,
+      tabLabel: input.tabLabel,
+      tabIndex: input.tabIndex,
     });
 
-    return JSON.stringify({ status: "ok", action, widgetId });
+    return JSON.stringify({ status: "ok", action, widgetId: widgetId || undefined, tabId: input.tabId || undefined });
   }
 }

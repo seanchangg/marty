@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
+import { useAuth } from "@/hooks/useAuth";
 
 interface HtmlWidgetProps {
   html?: string;
@@ -9,10 +10,24 @@ interface HtmlWidgetProps {
 }
 
 function HtmlWidget({ html, src, title = "HTML Widget" }: HtmlWidgetProps) {
-  if (src) {
+  const { user } = useAuth();
+
+  // Auto-inject userId into widget-html API URLs so cloud mode can find the file
+  const resolvedSrc = useMemo(() => {
+    if (!src) return undefined;
+    if (!user?.id) return src;
+    // Only inject for our own widget-html API route
+    if (src.startsWith("/api/widget-html/") && !src.includes("userId=")) {
+      const separator = src.includes("?") ? "&" : "?";
+      return `${src}${separator}userId=${encodeURIComponent(user.id)}`;
+    }
+    return src;
+  }, [src, user?.id]);
+
+  if (resolvedSrc) {
     return (
       <iframe
-        src={src}
+        src={resolvedSrc}
         title={title}
         sandbox="allow-scripts allow-same-origin"
         style={{

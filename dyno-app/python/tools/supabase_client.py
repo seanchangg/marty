@@ -16,7 +16,7 @@ import urllib.error
 _SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
 _SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
-_VALID_TABLES = {"profiles", "agent_memories", "agent_screenshots", "token_usage", "widget_layouts"}
+_VALID_TABLES = {"profiles", "agent_memories", "agent_screenshots", "token_usage", "widget_layouts", "user_credentials", "agent_activity", "child_sessions", "token_usage_hourly"}
 
 
 def _rest_url(table: str) -> str:

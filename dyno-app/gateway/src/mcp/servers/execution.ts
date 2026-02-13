@@ -9,6 +9,26 @@ import { execSync } from "child_process";
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, unlinkSync } from "fs";
 import { resolve } from "path";
 
+// ── Environment sanitization ────────────────────────────────────────────────
+// Strip secrets from subprocess environment so bot-executed code can't read them.
+const SENSITIVE_ENV_KEYS = new Set([
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "SUPABASE_JWT_SECRET",
+  "GATEWAY_KEY_STORE_SECRET",
+  "ANTHROPIC_API_KEY",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+]);
+
+function getSafeEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, val] of Object.entries(process.env)) {
+    if (val !== undefined && !SENSITIVE_ENV_KEYS.has(key)) {
+      env[key] = val;
+    }
+  }
+  return env;
+}
+
 // ── Tool definitions ─────────────────────────────────────────────────────────
 
 export const TOOL_DEFS = [
@@ -103,6 +123,7 @@ export function createHandlers(scriptsDir: string) {
           maxBuffer: 1024 * 1024,
           encoding: "utf-8",
           cwd: scriptsDir,
+          env: getSafeEnv(),
         });
         return result || "(no output)";
       } catch (err: unknown) {
@@ -138,6 +159,7 @@ export function createHandlers(scriptsDir: string) {
               maxBuffer: 1024 * 1024,
               encoding: "utf-8",
               cwd: scriptsDir,
+              env: getSafeEnv(),
             });
             return result || "(no output)";
           } catch (err: unknown) {

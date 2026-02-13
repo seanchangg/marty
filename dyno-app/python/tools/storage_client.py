@@ -39,7 +39,7 @@ def upload_file(bucket: str, user_id: str, path: str, content_bytes: bytes,
     """Upload a file to Supabase Storage at {userId}/{path}.
 
     Uses upsert mode so existing files are overwritten.
-    Returns the response dict on success, raises on error.
+    Returns the response dict on success, raises RuntimeError on any error.
     """
     storage_path = f"{user_id}/{path}"
     url = _storage_url(bucket, storage_path)
@@ -54,6 +54,8 @@ def upload_file(bucket: str, user_id: str, path: str, content_bytes: bytes,
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8")
         raise RuntimeError(f"Storage upload error ({e.code}): {body}")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise RuntimeError(f"Storage upload failed (network): {e}")
 
 
 def read_file(bucket: str, user_id: str, path: str) -> bytes:
@@ -71,25 +73,24 @@ def read_file(bucket: str, user_id: str, path: str) -> bytes:
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8")
         raise RuntimeError(f"Storage read error ({e.code}): {body}")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise RuntimeError(f"Storage read failed (network): {e}")
 
 
 def list_files(bucket: str, user_id: str, prefix: str = "") -> list[dict]:
     """List objects in Supabase Storage under {userId}/{prefix}.
 
-    Returns a list of file metadata dicts.
+    Returns a list of file metadata dicts (name, id, metadata, etc.).
+    The Supabase list API returns items in the folder specified by prefix.
     """
     list_url = f"{_SUPABASE_URL}/storage/v1/object/list/{bucket}"
 
-    search_prefix = f"{user_id}/{prefix}" if prefix else f"{user_id}/"
-
-    # Split into folder path and search string
-    # The API expects prefix as the folder and search as a filter
-    parts = search_prefix.rstrip("/").rsplit("/", 1)
-    folder = parts[0] if len(parts) > 1 else ""
-    search = parts[1] if len(parts) > 1 else parts[0]
+    # Build the folder prefix — Supabase expects the folder path, files
+    # inside that folder are returned with just their filename in "name".
+    folder_prefix = f"{user_id}/{prefix}" if prefix else user_id
 
     payload = json.dumps({
-        "prefix": f"{user_id}/{prefix}" if prefix else f"{user_id}/",
+        "prefix": folder_prefix,
         "limit": 1000,
         "offset": 0,
         "sortBy": {"column": "name", "order": "asc"},
@@ -99,10 +100,22 @@ def list_files(bucket: str, user_id: str, prefix: str = "") -> list[dict]:
     req = urllib.request.Request(list_url, data=payload, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            data = json.loads(resp.read().decode("utf-8"))
+            # Supabase returns a list directly, but guard against
+            # unexpected wrapper objects.
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict) and isinstance(data.get("files"), list):
+                return data["files"]
+            if isinstance(data, dict) and isinstance(data.get("items"), list):
+                return data["items"]
+            # Fallback — return as-is if it's a list-like structure
+            return data if isinstance(data, list) else []
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8")
         raise RuntimeError(f"Storage list error ({e.code}): {body}")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise RuntimeError(f"Storage list failed (network): {e}")
 
 
 def delete_file(bucket: str, user_id: str, path: str) -> dict:
@@ -120,6 +133,8 @@ def delete_file(bucket: str, user_id: str, path: str) -> dict:
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8")
         raise RuntimeError(f"Storage delete error ({e.code}): {body}")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise RuntimeError(f"Storage delete failed (network): {e}")
 
 
 def get_public_url(bucket: str, user_id: str, path: str) -> str:

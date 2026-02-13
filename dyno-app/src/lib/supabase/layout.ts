@@ -1,10 +1,12 @@
 import { supabase } from "@/lib/supabase/client";
-import type { Widget } from "@/types/widget";
+import type { TabbedLayout } from "@/types/widget";
+import { migrateLayout } from "@/lib/widgets/migration";
 
 /**
  * Fetch the saved layout for a user from Supabase.
+ * Returns a migrated TabbedLayout, or null if nothing stored.
  */
-export async function fetchLayout(userId: string): Promise<Widget[] | null> {
+export async function fetchLayout(userId: string): Promise<TabbedLayout | null> {
   try {
     const { data, error } = await supabase
       .from("widget_layouts")
@@ -14,12 +16,10 @@ export async function fetchLayout(userId: string): Promise<Widget[] | null> {
 
     if (error || !data) return null;
 
-    const layout = data.layout;
-    if (Array.isArray(layout)) return layout as Widget[];
-    if (layout && typeof layout === "object" && Array.isArray(layout.widgets)) {
-      return layout.widgets as Widget[];
-    }
-    return null;
+    const raw = data.layout;
+    if (!raw) return null;
+
+    return migrateLayout(raw);
   } catch {
     return null;
   }
@@ -30,7 +30,7 @@ export async function fetchLayout(userId: string): Promise<Widget[] | null> {
  */
 export async function saveLayoutToSupabase(
   userId: string,
-  widgets: Widget[]
+  layout: TabbedLayout
 ): Promise<void> {
   try {
     await supabase
@@ -38,7 +38,7 @@ export async function saveLayoutToSupabase(
       .upsert(
         {
           user_id: userId,
-          layout: widgets,
+          layout,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id" }

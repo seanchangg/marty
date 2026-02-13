@@ -5,6 +5,7 @@ import type { ThinkingStep } from "@/types";
 
 interface ThinkingTraceProps {
   steps: ThinkingStep[];
+  defaultOpen?: boolean;
 }
 
 const stepLabels: Record<string, string> = {
@@ -13,11 +14,11 @@ const stepLabels: Record<string, string> = {
   tool_result: "Tool Result",
 };
 
-export default function ThinkingTrace({ steps }: ThinkingTraceProps) {
+export default function ThinkingTrace({ steps, defaultOpen }: ThinkingTraceProps) {
   if (!steps.length) return null;
 
   return (
-    <Collapsible title={`Thinking Trace (${steps.length} steps)`}>
+    <Collapsible title={`Thinking Trace (${steps.length} steps)`} defaultOpen={defaultOpen}>
       <div className="flex flex-col gap-2">
         {steps.map((step, i) => (
           <div key={i} className="text-xs">

@@ -14,7 +14,32 @@ export interface WidgetLayout {
   version: number;
 }
 
-export type UIActionType = "add" | "remove" | "update" | "move" | "resize" | "clear" | "reset";
+export interface DashboardTab {
+  id: string;
+  label: string;
+  widgets: Widget[];
+}
+
+export interface TabbedLayout {
+  version: 2;
+  activeTabId: string;
+  tabs: DashboardTab[];
+}
+
+export type UIActionType =
+  | "add"
+  | "remove"
+  | "update"
+  | "move"
+  | "resize"
+  | "clear"
+  | "reset"
+  | "tab_create"
+  | "tab_delete"
+  | "tab_rename"
+  | "tab_reorder"
+  | "tab_switch"
+  | "move_to_tab";
 
 export interface UIAction {
   action: UIActionType;
@@ -24,4 +49,7 @@ export interface UIAction {
   size?: { w: number; h: number };
   props?: Record<string, unknown>;
   sessionId?: string;
+  tabId?: string;
+  tabLabel?: string;
+  tabIndex?: number;
 }

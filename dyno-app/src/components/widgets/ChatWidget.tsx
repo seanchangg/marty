@@ -6,6 +6,7 @@ import { Send } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import ChatMessage from "@/components/chat/ChatMessage";
+import ThinkingTrace from "@/components/chat/ThinkingTrace";
 import { useSession } from "@/hooks/useSessionManager";
 import { useAuth } from "@/hooks/useAuth";
 import { useServerStatus } from "@/hooks/useServerStatus";
@@ -14,6 +15,7 @@ import { useTokenMetrics } from "@/hooks/useTokenMetrics";
 import { DEFAULT_CHAT_SETTINGS } from "@/types";
 import type { Memory } from "@/hooks/useMemories";
 import { useScreenshotSelection } from "@/hooks/useScreenshotSelection";
+import { useVaultSelection } from "@/hooks/useVaultSelection";
 
 const MODEL_PRICING: Record<string, { inPerM: number; outPerM: number }> = {
   "claude-haiku-4-5-20251001": { inPerM: 0.8, outPerM: 4 },
@@ -38,6 +40,7 @@ function ChatWidget({ sessionId = "master", memories, selectedMemoryIds }: ChatW
   const [keyMissing, setKeyMissing] = useState<"api_key" | "private_key" | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const screenshotCtx = useScreenshotSelection();
+  const vaultCtx = useVaultSelection();
 
   const { estimatedTokens, estimatedCost, withToolsTokens, withToolsCost } =
     useTokenMetrics({
@@ -97,6 +100,16 @@ function ChatWidget({ sessionId = "master", memories, selectedMemoryIds }: ChatW
       memoryContext = selected
         .map((m) => `[${m.tag}] ${m.content}`)
         .join("\n");
+    }
+
+    // Collect selected vault file contents
+    if (vaultCtx && vaultCtx.selectedFiles.size > 0) {
+      const vaultContext = await vaultCtx.getSelectedContext();
+      if (vaultContext) {
+        memoryContext = memoryContext
+          ? memoryContext + "\n\n---\n\n" + vaultContext
+          : vaultContext;
+      }
     }
 
     // Collect selected screenshot URLs
@@ -162,6 +175,11 @@ function ChatWidget({ sessionId = "master", memories, selectedMemoryIds }: ChatW
               {screenshotCtx.selectedIds.size} screenshot{screenshotCtx.selectedIds.size === 1 ? "" : "s"} attached
             </span>
           )}
+          {sessionId === "master" && vaultCtx && vaultCtx.selectedFiles.size > 0 && (
+            <span className="text-xs text-highlight/50">
+              {vaultCtx.selectedFiles.size} vault file{vaultCtx.selectedFiles.size !== 1 ? "s" : ""} attached
+            </span>
+          )}
           {sessionId === "master" && session.messages.length > 0 && (
             <button
               onClick={session.clearMessages}
@@ -196,13 +214,18 @@ function ChatWidget({ sessionId = "master", memories, selectedMemoryIds }: ChatW
           <ChatMessage key={msg.id} message={msg} />
         ))}
         {session.isLoading && (
-          <div className="flex items-center gap-2 text-xs text-text/40">
-            <img
-              src="/logo.svg"
-              alt=""
-              className="h-4 w-4 animate-[spin_2s_linear_infinite]"
-            />
-            {isChild ? "Child agent working..." : "Agent is thinking..."}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-xs text-text/40">
+              <img
+                src="/logo.svg"
+                alt=""
+                className="h-4 w-4 animate-[spin_2s_linear_infinite]"
+              />
+              {isChild ? "Child agent working..." : "Agent is thinking..."}
+            </div>
+            {session.liveThinking.length > 0 && (
+              <ThinkingTrace steps={session.liveThinking} defaultOpen />
+            )}
           </div>
         )}
         {session.proposals.filter((p) => p.status === "pending").map((p) => (

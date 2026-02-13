@@ -163,7 +163,7 @@ export class SkillLoader {
         return [];
       }
 
-      const files: Array<{ name: string }> = await listResp.json();
+      const files = (await listResp.json()) as Array<{ name: string }>;
       const mdFiles = files.filter((f) => f.name.endsWith(".md"));
 
       for (const file of mdFiles) {
