@@ -263,18 +263,18 @@ body {
   border-radius: 0px;
   overflow: hidden;
   height: 100%;
-  transition: transform 0.25s ease, border-color 0.25s ease, border-radius 0.25s ease, box-shadow 0.25s ease;
+  transition: scale 0.25s ease, border-color 0.25s ease, border-radius 0.25s ease, box-shadow 0.25s ease;
   animation: widget-enter 0.4s ease-out both;
 }
 
 .widget-inner:hover {
-  transform: scale(1.01);
+  scale: 1.01;
   border-color: rgba(168, 213, 186, 0.45);
   border-radius: 8px;
 }
 
 .widget-inner:focus-within {
-  transform: scale(1.008);
+  scale: 1.008;
   border-color: rgba(168, 213, 186, 0.55);
   border-radius: 8px;
 }

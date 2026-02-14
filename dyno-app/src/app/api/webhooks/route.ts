@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getAuthUserId } from "@/lib/auth";
+import { presets, resolveProvider } from "@/lib/webhooks/providers";
 
 const PUBLIC_URL = process.env.NEXT_PUBLIC_APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
 
@@ -78,7 +79,7 @@ export async function GET(req: NextRequest) {
   // Default: list endpoints
   const { data, error } = await supabase
     .from("webhook_endpoints")
-    .select("id, endpoint_name, enabled, mode, created_at")
+    .select("id, endpoint_name, enabled, mode, provider, sig_header, sig_prefix, timestamp_header, sig_payload_template, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -105,6 +106,14 @@ export async function POST(req: NextRequest) {
   const userId = getAuthUserId(req) || body.userId;
   const { endpointName, secret } = body;
   const mode = body.mode === "direct" ? "direct" : "agent";
+  const provider: string = body.provider || "generic";
+
+  // Custom signature config — only stored for non-preset providers, but
+  // accepted for any provider so callers can override defaults.
+  const sigHeader: string | null = body.sigHeader || null;
+  const sigPrefix: string | null = body.sigPrefix ?? null;
+  const timestampHeader: string | null = body.timestampHeader || null;
+  const sigPayloadTemplate: string | null = body.sigPayloadTemplate || null;
 
   if (!userId || !endpointName || !secret) {
     return NextResponse.json(
@@ -134,31 +143,57 @@ export async function POST(req: NextRequest) {
   if (existing) {
     const { error } = await supabase
       .from("webhook_endpoints")
-      .update({ secret, enabled: true, mode })
+      .update({
+        secret, enabled: true, mode, provider,
+        sig_header: sigHeader,
+        sig_prefix: sigPrefix,
+        timestamp_header: timestampHeader,
+        sig_payload_template: sigPayloadTemplate,
+      })
       .eq("id", existing.id);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
+    const resolved = resolveProvider(provider, {
+      sig_header: sigHeader, sig_prefix: sigPrefix,
+      timestamp_header: timestampHeader, sig_payload_template: sigPayloadTemplate,
+    });
     return NextResponse.json({
       ok: true,
       action: "updated",
+      provider,
+      signatureHeader: resolved.signatureHeader,
+      signedPayloadFormat: resolved.signedPayloadFormat,
       url: `${PUBLIC_URL}/api/webhook/${userId}/${endpointName}`,
     });
   }
 
   const { error } = await supabase
     .from("webhook_endpoints")
-    .insert({ user_id: userId, endpoint_name: endpointName, secret, mode });
+    .insert({
+      user_id: userId, endpoint_name: endpointName, secret, mode, provider,
+      sig_header: sigHeader,
+      sig_prefix: sigPrefix,
+      timestamp_header: timestampHeader,
+      sig_payload_template: sigPayloadTemplate,
+    });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
+  const resolved = resolveProvider(provider, {
+    sig_header: sigHeader, sig_prefix: sigPrefix,
+    timestamp_header: timestampHeader, sig_payload_template: sigPayloadTemplate,
+  });
   return NextResponse.json({
     ok: true,
     action: "created",
+    provider,
+    signatureHeader: resolved.signatureHeader,
+    signedPayloadFormat: resolved.signedPayloadFormat,
     url: `${PUBLIC_URL}/api/webhook/${userId}/${endpointName}`,
   });
 }

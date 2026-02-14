@@ -4,8 +4,8 @@
  * POST /api/webhook/{userId}/{endpointName}
  *
  * Security layers:
- *  1. HMAC-SHA256 signature verification (shared secret)
- *  2. Replay protection via X-Webhook-Timestamp (5-minute window)
+ *  1. Provider-aware HMAC signature verification (shared secret)
+ *  2. Replay protection via X-Webhook-Timestamp (5-minute window, generic provider)
  *  3. Per-user rate limiting (configurable, default 100/hour)
  *  4. Payload size limit (1 MB)
  *  5. Internal auth secret when notifying Gateway
@@ -13,7 +13,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { createHmac, timingSafeEqual } from "crypto";
+import { resolveProvider } from "@/lib/webhooks/providers";
 
 const GATEWAY_HTTP_URL = process.env.NEXT_PUBLIC_GATEWAY_URL
   ? process.env.NEXT_PUBLIC_GATEWAY_URL.replace("ws://", "http://").replace("wss://", "https://")
@@ -27,33 +27,6 @@ const WEBHOOK_INTERNAL_SECRET =
 const MAX_PAYLOAD_BYTES = 1_048_576; // 1 MB
 const REPLAY_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_RATE_LIMIT = 100; // per hour
-
-/**
- * Verify the HMAC-SHA256 signature from the X-Webhook-Signature header.
- * Signature format: sha256=<hex digest>
- *
- * When X-Webhook-Timestamp is present, the signed payload is:
- *   timestamp + "." + body
- * This binds the timestamp to the signature, preventing replay attacks.
- */
-function verifySignature(
-  secret: string,
-  body: string,
-  signatureHeader: string,
-  timestamp?: string
-): boolean {
-  const signedPayload = timestamp ? `${timestamp}.${body}` : body;
-  const expected = createHmac("sha256", secret).update(signedPayload).digest("hex");
-  const provided = signatureHeader.replace(/^sha256=/, "");
-
-  if (expected.length !== provided.length) return false;
-
-  try {
-    return timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(provided, "hex"));
-  } catch {
-    return false;
-  }
-}
 
 export async function POST(
   req: NextRequest,
@@ -81,7 +54,7 @@ export async function POST(
     return NextResponse.json({ error: "Failed to read body" }, { status: 400 });
   }
 
-  // ── Replay protection ────────────────────────────────────────────────────
+  // ── Replay protection (generic provider only) ──────────────────────────
   const timestamp = req.headers.get("x-webhook-timestamp");
   if (timestamp) {
     const ts = parseInt(timestamp, 10);
@@ -98,7 +71,7 @@ export async function POST(
   // ── Endpoint lookup ──────────────────────────────────────────────────────
   const { data: endpoint, error: lookupError } = await supabase
     .from("webhook_endpoints")
-    .select("secret, enabled, mode")
+    .select("secret, enabled, mode, provider, sig_header, sig_prefix, timestamp_header, sig_payload_template")
     .eq("user_id", userId)
     .eq("endpoint_name", endpointName)
     .single();
@@ -111,9 +84,21 @@ export async function POST(
     return NextResponse.json({ error: "Endpoint disabled" }, { status: 403 });
   }
 
-  // ── HMAC signature verification ──────────────────────────────────────────
-  const signature = req.headers.get("x-webhook-signature") || "";
-  if (!signature || !verifySignature(endpoint.secret, rawBody, signature, timestamp || undefined)) {
+  // ── Provider-aware signature verification ──────────────────────────────
+  const providerName: string = endpoint.provider || "generic";
+  const provider = resolveProvider(providerName, {
+    sig_header: endpoint.sig_header,
+    sig_prefix: endpoint.sig_prefix,
+    timestamp_header: endpoint.timestamp_header,
+    sig_payload_template: endpoint.sig_payload_template,
+  });
+
+  const signature = provider.getSignature(req.headers);
+  if (!signature) {
+    return NextResponse.json({ error: "Missing signature header" }, { status: 401 });
+  }
+
+  if (!provider.verify(endpoint.secret, rawBody, signature, req.headers)) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 

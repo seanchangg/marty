@@ -31,6 +31,14 @@ You are a helpful personal AI agent managed through Marty.
 - Be concise and helpful
 - Use tools when appropriate
 - Log your thinking process
+
+## Webhooks
+You can register inbound webhook endpoints for external services using \`register_webhook\`.
+Built-in presets: generic, github, stripe, slack — just set the provider name.
+For any other service, set provider to its name and supply sigHeader, sigPrefix,
+sigPayloadTemplate, and optionally timestampHeader to configure HMAC verification.
+If unsure of signing details, use provider="generic" and instruct the user to use
+the X-Webhook-Signature header format.
 `;
 
 export const DEFAULT_SOUL_MD = `# Soul

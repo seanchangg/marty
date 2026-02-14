@@ -38,8 +38,30 @@ TOOL_DEFS = [
         "description": (
             "Register an inbound webhook endpoint. Returns the public URL "
             "that external services can POST to. A shared secret is auto-generated "
-            "for HMAC-SHA256 signature verification. The caller must include an "
-            "X-Webhook-Signature header with sha256=<hex digest> when sending payloads. "
+            "for HMAC-SHA256 signature verification.\n\n"
+            "PROVIDER CONFIGURATION:\n"
+            "• Built-in presets — set provider to 'github', 'stripe', 'slack', "
+            "or 'generic' and the signature header/algorithm are auto-configured. "
+            "No extra fields needed.\n"
+            "• Any other service — set provider to the service name (e.g. 'linear', "
+            "'twilio', 'pagerduty') and fill in sigHeader, sigPrefix, and "
+            "sigPayloadTemplate. To determine the correct values, check the "
+            "service's webhook documentation for:\n"
+            "  1. Which HTTP header carries the HMAC signature (→ sigHeader)\n"
+            "  2. What prefix the header value starts with (→ sigPrefix, e.g. 'sha256=')\n"
+            "  3. What the signed payload looks like (→ sigPayloadTemplate using "
+            "{body} and optionally {timestamp})\n"
+            "  4. If a separate header carries a timestamp (→ timestampHeader)\n\n"
+            "EXAMPLES:\n"
+            "• Linear: sigHeader='X-Linear-Signature', sigPrefix='', "
+            "sigPayloadTemplate='{body}'\n"
+            "• Twilio: sigHeader='X-Twilio-Signature', sigPrefix='', "
+            "sigPayloadTemplate='{body}'\n"
+            "• Most services that send 'sha256=<hex>' over the raw body: "
+            "just set sigHeader to the correct header name and leave the rest default.\n\n"
+            "If you don't know the service's signing details, register with "
+            "provider='generic' and tell the user to configure the external service "
+            "to use X-Webhook-Signature: sha256=<HMAC-SHA256 hex of body>.\n\n"
             "Always pass the userId from the system prompt."
         ),
         "input_schema": {
@@ -54,6 +76,54 @@ TOOL_DEFS = [
                     "description": (
                         "A unique name for this endpoint (alphanumeric, hyphens, underscores). "
                         "Examples: github_push, oauth_callback, stripe_events"
+                    ),
+                },
+                "provider": {
+                    "type": "string",
+                    "description": (
+                        "Name of the webhook provider. Built-in presets that need "
+                        "no extra config: generic, github, stripe, slack. "
+                        "For ANY other service, use its name and set the sig* fields."
+                    ),
+                    "default": "generic",
+                },
+                "sigHeader": {
+                    "type": "string",
+                    "description": (
+                        "HTTP header name that carries the HMAC signature. "
+                        "Find this in the service's webhook docs. "
+                        "Examples: 'X-Hub-Signature-256', 'X-Linear-Signature', "
+                        "'X-Twilio-Signature'. Defaults to 'X-Webhook-Signature' "
+                        "if omitted. Not needed for built-in presets."
+                    ),
+                },
+                "sigPrefix": {
+                    "type": "string",
+                    "description": (
+                        "Prefix to strip from the header value before comparing "
+                        "the hex digest. Common values: 'sha256=' (most services), "
+                        "'v0=' (Slack-style), '' (no prefix — raw hex). "
+                        "Defaults to 'sha256=' if omitted."
+                    ),
+                },
+                "timestampHeader": {
+                    "type": "string",
+                    "description": (
+                        "Header carrying a timestamp if the service binds it into "
+                        "the signed payload. Leave empty if the service signs only "
+                        "the body. Example: 'X-Slack-Request-Timestamp'."
+                    ),
+                },
+                "sigPayloadTemplate": {
+                    "type": "string",
+                    "description": (
+                        "Template for the data that gets HMAC-signed. "
+                        "Use {body} for the raw request body and {timestamp} for "
+                        "the value from timestampHeader. "
+                        "Common patterns: '{body}' (most services), "
+                        "'{timestamp}.{body}' (Stripe-style), "
+                        "'v0:{timestamp}:{body}' (Slack-style). "
+                        "Defaults to '{body}' if omitted."
                     ),
                 },
                 "mode": {
@@ -197,13 +267,21 @@ async def handle_register_webhook(input_data: dict) -> str:
     # Generate a secure shared secret
     secret = secrets.token_hex(32)
     mode = input_data.get("mode", "agent")
+    provider = input_data.get("provider", "generic")
 
-    payload = json.dumps({
+    post_body: dict[str, object] = {
         "userId": user_id,
         "endpointName": endpoint_name,
         "secret": secret,
         "mode": mode,
-    }).encode()
+        "provider": provider,
+    }
+    # Pass custom signature config when provided
+    for key in ("sigHeader", "sigPrefix", "timestampHeader", "sigPayloadTemplate"):
+        if input_data.get(key):
+            post_body[key] = input_data[key]
+
+    payload = json.dumps(post_body).encode()
 
     req = urllib.request.Request(
         API_BASE,
@@ -227,13 +305,20 @@ async def handle_register_webhook(input_data: dict) -> str:
             else:
                 mode_note = "\nMode: agent (gateway processes each payload)"
 
+            sig_header = result.get("signatureHeader", "X-Webhook-Signature")
+            sig_format = result.get("signedPayloadFormat", "")
+            resp_provider = result.get("provider", provider)
+
             return (
                 f"Webhook endpoint '{endpoint_name}' {action}.\n"
                 f"URL: {url}\n"
                 f"Secret: {secret}\n"
+                f"Provider: {resp_provider}\n"
                 f"{mode_note}\n\n"
-                f"Callers must include the header:\n"
-                f"  X-Webhook-Signature: sha256=<HMAC-SHA256 hex digest of the request body using the secret>"
+                f"Signature header: {sig_header}\n"
+                f"Signature format: {sig_format}\n"
+                f"Configure the external service to POST to the URL above "
+                f"and use the secret for HMAC signing."
             )
     except urllib.error.HTTPError as e:
         body = e.read().decode()
@@ -261,10 +346,14 @@ async def handle_list_webhooks(input_data: dict) -> str:
             for ep in endpoints:
                 status = "enabled" if ep.get("enabled") else "disabled"
                 mode = ep.get("mode", "agent")
-                lines.append(
-                    f"  {ep['endpoint_name']} ({status}, mode={mode})\n"
-                    f"    URL: {ep.get('url', 'N/A')}"
+                provider = ep.get("provider", "generic")
+                sig_header = ep.get("sig_header") or "(preset)"
+                entry = (
+                    f"  {ep['endpoint_name']} ({status}, mode={mode}, provider={provider})\n"
+                    f"    URL: {ep.get('url', 'N/A')}\n"
+                    f"    Signature header: {sig_header}"
                 )
+                lines.append(entry)
             return "Registered webhooks:\n" + "\n".join(lines)
     except Exception as e:
         return f"Error listing webhooks: {str(e)}"
