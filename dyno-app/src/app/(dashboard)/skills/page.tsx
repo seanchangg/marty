@@ -90,7 +90,10 @@ export default function SkillsPage() {
       </div>
 
       {loading ? (
-        <p className="text-text/50">Loading skills...</p>
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <img src="/logo.svg" alt="" className="h-6 w-6 animate-[spin_2s_linear_infinite]" />
+          <p className="text-sm text-text/40">Loading skills...</p>
+        </div>
       ) : error ? (
         <p className="text-red-400">{error}</p>
       ) : filteredSkills.length === 0 ? (

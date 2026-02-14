@@ -1,5 +1,5 @@
 # Execution-only packages for the Docker sandbox.
-# Excludes MCP server packages (anthropic, websockets, playwright).
+# Playwright is installed separately in the Dockerfile (needs browser binaries).
 
 # HTTP & APIs
 requests>=2.31.0

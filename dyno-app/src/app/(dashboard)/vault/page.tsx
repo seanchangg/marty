@@ -133,7 +133,10 @@ export default function VaultPage() {
       )}
 
       {loading ? (
-        <p className="text-sm text-text/40 py-8 text-center">Loading...</p>
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <img src="/logo.svg" alt="" className="h-6 w-6 animate-[spin_2s_linear_infinite]" />
+          <p className="text-sm text-text/40">Loading files...</p>
+        </div>
       ) : (
         <div className={`flex gap-6 ${selectedFileData ? "" : ""}`}>
           <div className={selectedFileData ? "flex-1 min-w-0" : "w-full"}>

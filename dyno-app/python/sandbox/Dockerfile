@@ -10,6 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements-sandbox.txt /tmp/req.txt
 RUN pip install --no-cache-dir -r /tmp/req.txt && rm /tmp/req.txt
 
+# Playwright: install browser + system deps
+RUN pip install --no-cache-dir playwright && \
+    playwright install --with-deps chromium
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && \
     useradd -m -s /bin/bash sandbox && \

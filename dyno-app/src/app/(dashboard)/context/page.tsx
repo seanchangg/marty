@@ -17,20 +17,24 @@ export default function ContextPage() {
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
     authFetch("/api/context")
       .then((r) => r.json())
       .then((data) => {
-        const contextFiles = data.files || [];
+        const contextFiles = (data.files || []).filter(
+          (f: ContextFile) => f.filename !== "heartbeat.md"
+        );
         setFiles(contextFiles);
         if (contextFiles.length > 0) {
           setSelectedFile(contextFiles[0].filename);
           setContent(contextFiles[0].content);
         }
       })
-      .catch(() => toast("Failed to load context files", "error"));
+      .catch(() => toast("Failed to load context files", "error"))
+      .finally(() => setLoading(false));
   }, [toast]);
 
   const handleFileSelect = (filename: string) => {
@@ -68,6 +72,12 @@ export default function ContextPage() {
     <div className="max-w-4xl">
       <h1 className="text-xl font-bold text-highlight mb-6">Agent Context</h1>
 
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <img src="/logo.svg" alt="" className="h-6 w-6 animate-[spin_2s_linear_infinite]" />
+          <p className="text-sm text-text/40">Loading context files...</p>
+        </div>
+      ) : (
       <div className="flex gap-6">
         <div className="w-48 flex flex-col gap-1">
           {files.map((f) => (
@@ -118,6 +128,7 @@ export default function ContextPage() {
           )}
         </Card>
       </div>
+      )}
     </div>
   );
 }

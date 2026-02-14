@@ -27,16 +27,6 @@ You are a helpful personal AI agent.
 - Take initiative when tasks are clear
 `;
 
-const DEFAULT_HEARTBEAT_MD = `# Heartbeat Tasks
-
-This file is read every time your heartbeat fires. Review the tasks below
-and decide if any need attention right now. If nothing needs action,
-respond with HEARTBEAT_OK.
-
-## Tasks
-- [ ] Check if core-state memory needs updating
-`;
-
 /** All local data lives inside the project: dyno-app/data/ */
 function getDataDir(): string {
   return path.resolve(process.cwd(), "data");
@@ -80,13 +70,6 @@ export async function initializeDefaultContext(userName?: string): Promise<void>
     await fs.writeFile(soulPath, DEFAULT_SOUL_MD, "utf-8");
   }
 
-  // heartbeat.md
-  const heartbeatPath = path.join(dataDir, "context", "heartbeat.md");
-  try {
-    await fs.access(heartbeatPath);
-  } catch {
-    await fs.writeFile(heartbeatPath, DEFAULT_HEARTBEAT_MD, "utf-8");
-  }
 }
 
 export async function readContextFile(filename: string): Promise<string> {
@@ -119,7 +102,6 @@ export async function listContextFiles(): Promise<string[]> {
 const DEFAULT_CONTEXT_FILES: Record<string, string> = {
   "claude.md": DEFAULT_CLAUDE_MD,
   "soul.md": DEFAULT_SOUL_MD,
-  "heartbeat.md": DEFAULT_HEARTBEAT_MD,
 };
 
 /** Seed default context files for a new user (no-op for files that already exist). */
