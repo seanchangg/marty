@@ -39,36 +39,38 @@ const HEADLESS_ALLOWED_TOOLS = new Set([
   "poll_webhooks",
   "list_webhooks",
   "recall_memories",
-  "list_memories",
-  "search_memories",
+  "list_memory_tags",
   "read_file",
   "list_files",
   "list_uploads",
   "read_upload",
-  "get_upload_url",
   "fetch_url",
-  "fetch_json",
   "web_search",
-  "list_installed_skills",
+  "list_workspace_skills",
+  "read_skill",
   "list_screenshots",
   "get_metrics",
+  "list_metrics",
+  "list_credentials",
 
   // Safe writes — logging, dashboard, memory
   "save_memory",
-  "record_metric",
-  "upload_screenshot",
+  "append_memory",
+  "edit_memory",
+  "track_metric",
+  "take_screenshot",
 
   // Orchestration — dashboard updates, child agents
   "ui_action",
+  "get_dashboard_layout",
   "spawn_agent",
   "send_to_session",
   "list_children",
   "get_session_status",
-  "get_dashboard_layout",
+  "get_child_details",
 
   // Credential retrieval (needed for OAuth token exchange)
-  "retrieve_credential",
-  "store_credential",
+  "get_credential",
 ]);
 
 // ── Route handler ────────────────────────────────────────────────────────────

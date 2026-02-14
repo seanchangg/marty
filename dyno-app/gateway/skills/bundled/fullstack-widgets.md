@@ -255,7 +255,10 @@ For widgets that display live data from external services (GitHub events, monito
        `/api/webhook-data?userId=${userId}&endpointName=github-push&limit=20`
      );
      const data = await res.json();
-     return data.payloads; // array of { id, endpoint_name, payload, headers, received_at }
+     // Each item: { id (UUID), endpoint_name, payload (parsed JSON object), created_at }
+     // The webhook body is in item.payload — NOT item.body
+     // payload is already a parsed object, not a string — do NOT JSON.parse() it
+     return data.payloads;
    }
    ```
 
@@ -305,6 +308,8 @@ For widgets that display live data from external services (GitHub events, monito
 - **Child agent trying to spawn sub-agents**: Opus child agents do NOT have `spawn_agent`. Always include "you are a child agent, build everything directly" in the spawn prompt.
 - **Using `/api/run-script` instead of `/api/widget-exec`**: There is NO `/api/run-script` endpoint. The `run_script` tool is for agent-side execution only. Widget HTML must always fetch `/api/widget-exec` to run saved scripts.
 - **Registering agent-mode webhooks without a prompt**: If you register a webhook with `mode: "agent"` but no `prompt`, the headless agent has no instructions and won't update widgets or take useful action. Always include a specific `prompt` describing what to do (update which widget, save what memory, track which metric).
+- **Omitting `input` in widget-exec fetch calls**: The `input` field in the `/api/widget-exec` body is what gets piped to the script's stdin as JSON. If you omit it or use a wrong field name (`stdin`, `data`, `body`), the script receives empty stdin and `json.load(sys.stdin)` throws `"Expecting value: line 1 column 1"`. Always pass `input` — even if the script doesn't need data, use `input: {}`.
+- **Using `item.body` instead of `item.payload` for webhook data**: The `/api/webhook-data` response shape is `{ payloads: [{ id, endpoint_name, payload, created_at }] }`. The webhook body is in `item.payload`, NOT `item.body`. The field is already a parsed JSON object — do NOT `JSON.parse()` it again.
 - **Polling webhooks from widgets**: Do NOT build widgets that poll `/api/webhooks?action=poll` on a timer — that's the agent-facing endpoint and marks payloads as processed. If a widget needs live data from webhooks, use `mode: "direct"` when registering the webhook and poll `/api/webhook-data` instead. See the "Webhooks → Widget (Direct Mode)" section above.
 - **Using Supabase/env vars in execute_code**: `execute_code` runs in a fresh Docker container with NO access to server env vars (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, API keys, etc.). Use built-in tools (`db_query`, `db_insert`, `fetch_url`) which run server-side with full access. If a script needs data, fetch it with tools first, then pass it as input.
 - **Widgets accessing Supabase storage directly**: Widget iframes have no auth tokens. Direct requests to `supabase.co/storage/v1/object/...` return 401. Use `/api/widget-exec` for backend computation or `/api/storage/preview` for file access — these proxy routes handle auth server-side.

@@ -35,7 +35,7 @@ const EXAMPLE_PROMPTS = [
     description: "Webhooks let external services talk to Marty automatically",
     prompts: [
       "What are webhooks and how do they work in Marty?",
-      "Tell Opus to set up a webhook that triggers when I get a GitHub star and notifies me with a summary",
+      "Tell Opus to set up a webhook that triggers when I get a GitHub star and updates a widget",
       "Tell Opus to create a webhook endpoint that accepts form submissions and stores them in a widget",
     ],
   },

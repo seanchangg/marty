@@ -132,6 +132,8 @@ Bucket routing (handled automatically by tools):
 - **execute_code has NO env vars**: Docker containers cannot access `SUPABASE_URL`, API keys, etc. Use built-in tools (`db_query`, `fetch_url`) instead.
 - **Widgets cannot access Supabase directly**: Iframes have no auth tokens. Use `/api/widget-exec` or `/api/storage/preview` proxy routes.
 - **Don't burn tokens on env/auth errors**: If a tool fails with auth/environment errors, stop retrying and use the correct approach above.
+- **Omitting `input` in widget-exec calls**: When building widget HTML that calls `/api/widget-exec`, always include `input` in the fetch body — even `input: {}`. Using wrong field names (`stdin`, `data`, `body`) also results in empty stdin. The three required fields are `script`, `input`, and `userId`.
+- **Using `item.body` instead of `item.payload`**: The `/api/webhook-data` endpoint returns items with `payload` (not `body`). It's already a parsed JSON object — don't `JSON.parse()` it.
 
 ## Behavioral Guidelines
 - Be direct and concise — no filler or hedging

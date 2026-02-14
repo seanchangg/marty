@@ -106,9 +106,8 @@ export async function handleWidgetExecRequest(
     timeout: typeof timeout === "number" ? Math.min(timeout, 120) : 30,
   };
 
-  if (input !== undefined) {
-    toolInput.stdin_data = JSON.stringify(input);
-  }
+  // Always send stdin so scripts can reliably json.load(sys.stdin)
+  toolInput.stdin_data = JSON.stringify(input ?? {});
 
   try {
     const resultStr = await deps.legacyBridge.executeTool(
