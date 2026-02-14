@@ -4,28 +4,39 @@ import React, { useState } from "react";
 
 const EXAMPLE_PROMPTS = [
   {
-    category: "Build",
+    category: "Try it out",
+    description: "Simple tasks to see what Marty can do",
     prompts: [
-      "Create a music widget that lets me search for and play music using Youtube iFrame API and scraping",
-      "Build me a pomodoro timer widget with start/pause/reset and a log of completed sessions",
-      "Make a weather dashboard widget that shows the forecast for my city",
+      "Create a music widget that lets me search and play songs",
+      "Take a screenshot of https://news.ycombinator.com",
+      "What time is it in Tokyo right now? Show me in a widget.",
     ],
   },
   {
-    category: "Automate",
+    category: "Go deeper",
+    description: "Multi-step tasks and agent features",
     prompts: [
-      "Spawn a child agent that just tells me jokes nonstop",
-      "Take a screenshot of https://news.ycombinator.com and save it",
-      "Build a graph from the latest tech news headlines",
-      "Interview me and record my profile in memories",
+      "Interview me about my interests and save what you learn to memories",
+      "Spawn a child agent to research the top 5 AI papers this week, then summarize them in a widget",
+      "Build a pomodoro timer widget with start/pause/reset",
     ],
   },
   {
-    category: "Configure",
+    category: "Get creative",
+    description: "Push the limits — Marty can build anything",
     prompts: [
-      "What skills do you have installed? What new ones would you suggest?",
+      "Build a kanban board widget where I can track my projects",
+      "Make a live dashboard that pulls my GitHub activity and shows contribution stats",
       "Rearrange my dashboard — put chat on the left, stats on the right, and make everything bigger",
-      "Save a memory that I prefer dark, minimal UI and concise responses",
+    ],
+  },
+  {
+    category: "Power user",
+    description: "Webhooks let external services talk to Marty automatically",
+    prompts: [
+      "What are webhooks and how do they work in Marty?",
+      "Set up a webhook that triggers when I get a GitHub star and notifies me with a summary",
+      "Create a webhook endpoint that accepts form submissions and stores them in a widget",
     ],
   },
 ];
@@ -48,17 +59,18 @@ function TutorialWidget() {
   return (
     <div className="h-full overflow-y-auto bg-surface border border-primary/20 p-4">
       <h2 className="text-base font-semibold text-highlight mb-1">
-        Getting Started
+        Things to try
       </h2>
       <p className="text-xs text-text/40 mb-4">
-        Click any prompt to copy it, then paste into the Agent Chat.
+        Click any prompt to copy it, then paste into the chat.
       </p>
 
       {EXAMPLE_PROMPTS.map((group) => (
         <div key={group.category} className="mb-4">
-          <h3 className="text-[10px] uppercase tracking-wider text-text/30 mb-2">
+          <h3 className="text-[10px] uppercase tracking-wider text-text/30 mb-0.5">
             {group.category}
           </h3>
+          <p className="text-[10px] text-text/20 mb-2">{group.description}</p>
           <div className="flex flex-col gap-1.5">
             {group.prompts.map((prompt) => {
               const isCopied = copied === prompt;
@@ -82,8 +94,7 @@ function TutorialWidget() {
       ))}
 
       <p className="text-[10px] text-text/25 mt-2">
-        Marty can build widgets, take screenshots, search the web, manage files,
-        run code, and more. Just ask.
+        These are just starting points. Marty can do anything you can describe.
       </p>
     </div>
   );
