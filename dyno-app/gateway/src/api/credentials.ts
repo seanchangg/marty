@@ -39,6 +39,22 @@ async function authenticateRequest(
     return "__skip__";
   }
 
+  // Method 1: Internal service key (used by Python tools)
+  const serviceKey = req.headers["x-service-key"] as string | undefined;
+  const expectedKey =
+    process.env.INTERNAL_API_KEY ||
+    process.env.GATEWAY_KEY_STORE_SECRET ||
+    "dyno-dev-secret-change-in-production";
+
+  if (serviceKey) {
+    if (serviceKey === expectedKey) {
+      return "__skip__"; // Trusted internal call — userId comes from body/query
+    }
+    sendJson(res, 403, { error: "Invalid service key" });
+    return null;
+  }
+
+  // Method 2: Supabase JWT
   const authHeader = req.headers["authorization"] || "";
   if (!authHeader.startsWith("Bearer ")) {
     sendJson(res, 401, { error: "Missing Authorization header" });

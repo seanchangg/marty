@@ -10,7 +10,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 
-from ._common import FRONTEND_URL
+from ._common import FRONTEND_URL, service_headers
 
 # Gateway URL for credential retrieval (internal calls — always localhost)
 _GATEWAY_HTTP = os.getenv("GATEWAY_INTERNAL_URL", "http://localhost:18789")
@@ -73,7 +73,7 @@ async def handle_get_credential(input_data: dict) -> str:
     req = urllib.request.Request(
         f"{_GATEWAY_HTTP}/api/credentials/retrieve",
         data=payload,
-        headers={"Content-Type": "application/json"},
+        headers=service_headers({"Content-Type": "application/json"}),
         method="POST",
     )
 
@@ -101,7 +101,8 @@ async def handle_list_credentials(input_data: dict) -> str:
 
     try:
         url = f"{_GATEWAY_HTTP}/api/credentials?userId={urllib.parse.quote(user_id)}"
-        with urllib.request.urlopen(url, timeout=10) as resp:
+        list_req = urllib.request.Request(url, headers=service_headers())
+        with urllib.request.urlopen(list_req, timeout=10) as resp:
             result = json.loads(resp.read())
             credentials = result.get("credentials", [])
 

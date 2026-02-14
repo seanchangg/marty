@@ -363,7 +363,27 @@ async function main() {
 
   const wss = new WebSocketServer({ server: httpServer });
 
+  // ── WebSocket keepalive ──────────────────────────────────────────────────
+  // Ping every 30s to prevent idle-timeout disconnects (routers, proxies, OS).
+  const WS_PING_INTERVAL_MS = 30_000;
+  const aliveSet = new WeakSet<WebSocket>();
+
+  const pingInterval = setInterval(() => {
+    for (const client of wss.clients) {
+      if (!aliveSet.has(client)) {
+        client.terminate();
+        continue;
+      }
+      aliveSet.delete(client);
+      client.ping();
+    }
+  }, WS_PING_INTERVAL_MS);
+
+  wss.on("close", () => clearInterval(pingInterval));
+
   wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
+    aliveSet.add(ws);
+    ws.on("pong", () => aliveSet.add(ws));
     activeConnections++;
 
     // Try to authenticate via JWT
@@ -493,6 +513,7 @@ async function main() {
   // Graceful shutdown
   process.on("SIGINT", () => {
     console.log("\n[gateway] Shutting down...");
+    clearInterval(pingInterval);
     // heartbeatDaemon.shutdown();
     agentManager.shutdown();
     if (legacyBridge) legacyBridge.disconnect();

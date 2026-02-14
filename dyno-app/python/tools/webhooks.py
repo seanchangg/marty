@@ -135,6 +135,17 @@ TOOL_DEFS = [
                     ),
                     "default": "agent",
                 },
+                "prompt": {
+                    "type": "string",
+                    "description": (
+                        "Processing instructions for your future headless self. "
+                        "When this webhook fires, you run in headless mode with no user present — "
+                        "this prompt tells you what to do with the payload. "
+                        "Example: 'Update the github-stars stat card with the new star count. "
+                        "Save a memory with the stargazer username.' "
+                        "Be specific about which widgets to update, what memories to save, etc."
+                    ),
+                },
             },
             "required": ["userId", "endpoint_name"],
         },
@@ -281,6 +292,10 @@ async def handle_register_webhook(input_data: dict) -> str:
         if input_data.get(key):
             post_body[key] = input_data[key]
 
+    # Pass processing prompt
+    if input_data.get("prompt"):
+        post_body["prompt"] = input_data["prompt"]
+
     payload = json.dumps(post_body).encode()
 
     req = urllib.request.Request(
@@ -348,10 +363,12 @@ async def handle_list_webhooks(input_data: dict) -> str:
                 mode = ep.get("mode", "agent")
                 provider = ep.get("provider", "generic")
                 sig_header = ep.get("sig_header") or "(preset)"
+                prompt_text = ep.get("prompt") or "(none)"
                 entry = (
                     f"  {ep['endpoint_name']} ({status}, mode={mode}, provider={provider})\n"
                     f"    URL: {ep.get('url', 'N/A')}\n"
-                    f"    Signature header: {sig_header}"
+                    f"    Signature header: {sig_header}\n"
+                    f"    Prompt: {prompt_text}"
                 )
                 lines.append(entry)
             return "Registered webhooks:\n" + "\n".join(lines)

@@ -224,6 +224,18 @@ setInterval(refresh, 10000);
 
 Use this for dashboards, live feeds, or any widget that should stay current without user interaction.
 
+## Webhooks → Agent Processing
+
+For webhooks that need the agent to take action (update widgets, save memories, track metrics), use **agent mode** (the default). The gateway wakes the agent headlessly to process each payload.
+
+**You MUST include a `prompt`** when registering agent-mode webhooks. This prompt is injected into the headless session so your future self knows what to do. Without it, the agent has no instructions and won't take meaningful action.
+
+```
+register_webhook userId=..., endpoint_name="github-stars", provider="github", prompt="Increment the github-stars metric. Update the repo-stats stat card to show the new total. Save a memory tagged 'github' with the stargazer username."
+```
+
+The prompt should be specific: name widgets, metrics, memory tags, and any other actions to take. Think of it as a note from present-you to future-headless-you.
+
 ## Webhooks → Widget (Direct Mode)
 
 For widgets that display live data from external services (GitHub events, monitoring pings, RSS updates), use **direct mode** webhooks. This skips bot processing entirely — no tokens spent, no gateway wake-up.
@@ -292,4 +304,8 @@ For widgets that display live data from external services (GitHub events, monito
 - **Using wrong field name for script**: The fetch body must use `script` (not `name`, `scriptName`, or `script_name`). Copy the `callBackend` helper from the template above exactly.
 - **Child agent trying to spawn sub-agents**: Opus child agents do NOT have `spawn_agent`. Always include "you are a child agent, build everything directly" in the spawn prompt.
 - **Using `/api/run-script` instead of `/api/widget-exec`**: There is NO `/api/run-script` endpoint. The `run_script` tool is for agent-side execution only. Widget HTML must always fetch `/api/widget-exec` to run saved scripts.
+- **Registering agent-mode webhooks without a prompt**: If you register a webhook with `mode: "agent"` but no `prompt`, the headless agent has no instructions and won't update widgets or take useful action. Always include a specific `prompt` describing what to do (update which widget, save what memory, track which metric).
 - **Polling webhooks from widgets**: Do NOT build widgets that poll `/api/webhooks?action=poll` on a timer — that's the agent-facing endpoint and marks payloads as processed. If a widget needs live data from webhooks, use `mode: "direct"` when registering the webhook and poll `/api/webhook-data` instead. See the "Webhooks → Widget (Direct Mode)" section above.
+- **Using Supabase/env vars in execute_code**: `execute_code` runs in a fresh Docker container with NO access to server env vars (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, API keys, etc.). Use built-in tools (`db_query`, `db_insert`, `fetch_url`) which run server-side with full access. If a script needs data, fetch it with tools first, then pass it as input.
+- **Widgets accessing Supabase storage directly**: Widget iframes have no auth tokens. Direct requests to `supabase.co/storage/v1/object/...` return 401. Use `/api/widget-exec` for backend computation or `/api/storage/preview` for file access — these proxy routes handle auth server-side.
+- **Burning tokens on environment errors**: If a tool call fails with an auth/env error, do NOT retry with variations or go on long debugging tangents. Recognize the pattern (missing env var, 401 from Supabase) and use the correct approach above.

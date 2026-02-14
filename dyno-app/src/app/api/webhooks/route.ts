@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
   // Default: list endpoints
   const { data, error } = await supabase
     .from("webhook_endpoints")
-    .select("id, endpoint_name, enabled, mode, provider, sig_header, sig_prefix, timestamp_header, sig_payload_template, created_at")
+    .select("id, endpoint_name, enabled, mode, provider, sig_header, sig_prefix, timestamp_header, sig_payload_template, prompt, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -114,6 +114,7 @@ export async function POST(req: NextRequest) {
   const sigPrefix: string | null = body.sigPrefix ?? null;
   const timestampHeader: string | null = body.timestampHeader || null;
   const sigPayloadTemplate: string | null = body.sigPayloadTemplate || null;
+  const prompt: string | null = body.prompt || null;
 
   if (!userId || !endpointName || !secret) {
     return NextResponse.json(
@@ -149,6 +150,7 @@ export async function POST(req: NextRequest) {
         sig_prefix: sigPrefix,
         timestamp_header: timestampHeader,
         sig_payload_template: sigPayloadTemplate,
+        prompt,
       })
       .eq("id", existing.id);
 
@@ -178,6 +180,7 @@ export async function POST(req: NextRequest) {
       sig_prefix: sigPrefix,
       timestamp_header: timestampHeader,
       sig_payload_template: sigPayloadTemplate,
+      prompt,
     });
 
   if (error) {
