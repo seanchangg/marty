@@ -268,19 +268,21 @@ export function useWidgetLayout() {
         }
       }
 
-      // Try local file
-      try {
-        const res = await authFetch("/api/layout");
-        if (res.ok) {
-          const data = await res.json();
-          const migrated = migrateLayout(data);
-          if (migrated.tabs.length > 0 && migrated.tabs.some((t) => t.widgets.length > 0)) {
-            dispatch({ type: "set", layout: migrated });
-            return;
+      // Try local file (only for unauthenticated / local-mode users)
+      if (!user?.id) {
+        try {
+          const res = await authFetch("/api/layout");
+          if (res.ok) {
+            const data = await res.json();
+            const migrated = migrateLayout(data);
+            if (migrated.tabs.length > 0 && migrated.tabs.some((t) => t.widgets.length > 0)) {
+              dispatch({ type: "set", layout: migrated });
+              return;
+            }
           }
+        } catch {
+          // Fall through to defaults
         }
-      } catch {
-        // Fall through to defaults
       }
 
       // Use defaults (already set as initial state)
@@ -294,16 +296,16 @@ export function useWidgetLayout() {
 
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      // Save to local file
-      authFetch("/api/layout", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(layout),
-      }).catch(() => {});
-
-      // Save to Supabase
       if (user?.id) {
+        // Authenticated: save to Supabase only
         saveLayoutToSupabase(user.id, layout).catch(() => {});
+      } else {
+        // Unauthenticated / local mode: save to local file
+        authFetch("/api/layout", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(layout),
+        }).catch(() => {});
       }
     }, 1000);
 
