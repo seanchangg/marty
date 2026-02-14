@@ -7,6 +7,7 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import type { Widget } from "@/types/widget";
 import { getWidget } from "@/lib/widgets/registry";
+import Minimap from "./Minimap";
 
 // ── Base grid constants (never change — zoom scales visually) ────────────────
 
@@ -211,73 +212,87 @@ export default function WidgetCanvas({
   }, [widgets]);
 
   return (
-    <div
-      ref={scrollRef}
-      className="w-full h-[calc(100vh-4rem)] overflow-auto pl-4"
-    >
-      {/* Zoom wrapper — CSS zoom scales everything uniformly:
-          layout, fonts, borders, widget internals, pointer coords */}
-      <div style={{ zoom: zoomScale }}>
-        <div style={{ width: GRID_WIDTH, minHeight: canvasHeight }}>
-          <GridLayout
-            className="widget-grid-layout"
-            layout={layout}
-            width={GRID_WIDTH}
-            gridConfig={{
-              cols: GRID_COLS,
-              rowHeight: ROW_HEIGHT,
-              margin: [GAP, GAP] as [number, number],
-              containerPadding: [0, 0] as [number, number],
-              maxRows: Infinity,
-            }}
-            dragConfig={{
-              enabled: true,
-              bounded: false,
-              handle: ".widget-drag-handle",
-              threshold: 3,
-            }}
-            onLayoutChange={handleLayoutChange}
+    <div className="relative w-full h-[calc(100vh-4rem)]">
+      <div
+        ref={scrollRef}
+        className="w-full h-full overflow-auto pl-4 pt-3"
+      >
+        {/* Zoom wrapper — CSS zoom scales everything uniformly:
+            layout, fonts, borders, widget internals, pointer coords */}
+        <div style={{ zoom: zoomScale }}>
+          <div style={{ width: GRID_WIDTH, minHeight: canvasHeight }}>
+            <GridLayout
+              className="widget-grid-layout"
+              layout={layout}
+              width={GRID_WIDTH}
+              gridConfig={{
+                cols: GRID_COLS,
+                rowHeight: ROW_HEIGHT,
+                margin: [GAP, GAP] as [number, number],
+                containerPadding: [0, 0] as [number, number],
+                maxRows: Infinity,
+              }}
+              dragConfig={{
+                enabled: true,
+                bounded: false,
+                handle: ".widget-drag-handle",
+                threshold: 3,
+              }}
+              onLayoutChange={handleLayoutChange}
+            >
+              {widgets.map((widget) => (
+                <div key={widget.id} className="widget-container">
+                  <WidgetWrapper
+                    widget={widget}
+                    onRemove={() => onRemoveWidget(widget.id)}
+                  />
+                </div>
+              ))}
+            </GridLayout>
+          </div>
+        </div>
+
+        {/* Controls — sticky to bottom-left of viewport */}
+        <div
+          className="sticky bottom-4 left-4 inline-flex items-center gap-2 bg-surface/90 border border-primary/20 px-3 py-1.5 select-none z-50 ml-4"
+        >
+          <button
+            onClick={() => handleZoom(-1)}
+            disabled={zoomLevel <= MIN_ZOOM}
+            className="text-xs text-text/50 hover:text-highlight disabled:text-text/15 transition-colors cursor-pointer px-1.5 py-0.5 border border-primary/20 hover:border-primary/40 disabled:cursor-default font-mono"
           >
-            {widgets.map((widget) => (
-              <div key={widget.id} className="widget-container">
-                <WidgetWrapper
-                  widget={widget}
-                  onRemove={() => onRemoveWidget(widget.id)}
-                />
-              </div>
-            ))}
-          </GridLayout>
+            −
+          </button>
+          <span className="text-[10px] text-text/40 font-mono w-8 text-center">
+            {zoomLevel === 0 ? "1x" : `${zoomLevel > 0 ? "+" : ""}${zoomLevel}`}
+          </span>
+          <button
+            onClick={() => handleZoom(1)}
+            disabled={zoomLevel >= MAX_ZOOM}
+            className="text-xs text-text/50 hover:text-highlight disabled:text-text/15 transition-colors cursor-pointer px-1.5 py-0.5 border border-primary/20 hover:border-primary/40 disabled:cursor-default font-mono"
+          >
+            +
+          </button>
+          <div className="w-px h-3 bg-primary/20 mx-1" />
+          <button
+            onClick={resetView}
+            className="text-[10px] text-text/50 hover:text-highlight transition-colors cursor-pointer px-1.5 py-0.5 border border-primary/20 hover:border-primary/40"
+          >
+            Reset
+          </button>
         </div>
       </div>
 
-      {/* Controls — sticky to bottom-left of viewport */}
-      <div
-        className="sticky bottom-4 left-4 inline-flex items-center gap-2 bg-surface/90 border border-primary/20 px-3 py-1.5 select-none z-50 ml-4"
-      >
-        <button
-          onClick={() => handleZoom(-1)}
-          disabled={zoomLevel <= MIN_ZOOM}
-          className="text-xs text-text/50 hover:text-highlight disabled:text-text/15 transition-colors cursor-pointer px-1.5 py-0.5 border border-primary/20 hover:border-primary/40 disabled:cursor-default font-mono"
-        >
-          −
-        </button>
-        <span className="text-[10px] text-text/40 font-mono w-8 text-center">
-          {zoomLevel === 0 ? "1x" : `${zoomLevel > 0 ? "+" : ""}${zoomLevel}`}
-        </span>
-        <button
-          onClick={() => handleZoom(1)}
-          disabled={zoomLevel >= MAX_ZOOM}
-          className="text-xs text-text/50 hover:text-highlight disabled:text-text/15 transition-colors cursor-pointer px-1.5 py-0.5 border border-primary/20 hover:border-primary/40 disabled:cursor-default font-mono"
-        >
-          +
-        </button>
-        <div className="w-px h-3 bg-primary/20 mx-1" />
-        <button
-          onClick={resetView}
-          className="text-[10px] text-text/50 hover:text-highlight transition-colors cursor-pointer px-1.5 py-0.5 border border-primary/20 hover:border-primary/40"
-        >
-          Reset
-        </button>
+      {/* Minimap — bottom-right overlay */}
+      <div className="absolute bottom-16 right-4 z-50">
+        <Minimap
+          widgets={widgets}
+          scrollRef={scrollRef}
+          zoomScale={zoomScale}
+          baseSnapX={BASE_SNAP_X}
+          baseSnapY={BASE_SNAP_Y}
+          gap={GAP}
+        />
       </div>
     </div>
   );
@@ -305,7 +320,7 @@ function WidgetWrapper({ widget, onRemove }: WidgetWrapperProps) {
   const props = { ...widget.props, sessionId: widget.sessionId };
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="widget-inner flex flex-col">
       {/* Drag handle bar */}
       <div className="widget-drag-handle flex items-center justify-between px-2 py-1 bg-primary/10 cursor-move select-none shrink-0">
         <span className="text-[10px] text-text/30 font-mono truncate">

@@ -224,6 +224,62 @@ setInterval(refresh, 10000);
 
 Use this for dashboards, live feeds, or any widget that should stay current without user interaction.
 
+## Webhooks → Widget (Direct Mode)
+
+For widgets that display live data from external services (GitHub events, monitoring pings, RSS updates), use **direct mode** webhooks. This skips bot processing entirely — no tokens spent, no gateway wake-up.
+
+### Setup
+
+1. Register a webhook with `mode: "direct"`:
+   ```
+   register_webhook userId=..., endpoint_name="github-push", mode="direct"
+   ```
+
+2. Widget HTML fetches payloads from `/api/webhook-data`:
+   ```javascript
+   async function fetchWebhookData() {
+     const userId = window.__DYNO_USER_ID || '';
+     const res = await fetch(
+       `/api/webhook-data?userId=${userId}&endpointName=github-push&limit=20`
+     );
+     const data = await res.json();
+     return data.payloads; // array of { id, endpoint_name, payload, headers, received_at }
+   }
+   ```
+
+3. Poll with `setInterval` — this IS appropriate for direct mode (no bot tokens spent):
+   ```javascript
+   let lastTimestamp = null;
+
+   async function refresh() {
+     try {
+       let url = `/api/webhook-data?userId=${window.__DYNO_USER_ID}&endpointName=github-push&limit=20`;
+       if (lastTimestamp) url += `&since=${encodeURIComponent(lastTimestamp)}`;
+       const res = await fetch(url);
+       const data = await res.json();
+       if (data.payloads.length > 0) {
+         lastTimestamp = data.payloads[0].received_at;
+         render(data.payloads);
+       }
+     } catch (err) {
+       console.error('Webhook data fetch failed:', err);
+     }
+   }
+
+   refresh();
+   setInterval(refresh, 10000); // poll every 10 seconds
+   ```
+
+### When to use direct vs agent mode
+
+| | Agent mode (default) | Direct mode |
+|---|---|---|
+| Bot processes payload | Yes | No |
+| Token cost per webhook | Yes | None |
+| Gateway notified | Yes | No |
+| Widget reads data via | Backend script reading stored results | `/api/webhook-data` endpoint |
+| Best for | Complex processing, actions, notifications | Simple data feeds, live displays |
+
 ## Common Mistakes
 
 - **Saving JSON state/data files to widget-html**: The `/api/widget-html/` endpoint ONLY serves `.html` files — it returns 400 for everything else. Do NOT write JSON files to `workspace/widgets/`. JSON state files, config files, and other non-HTML data must go in **`workspace/data/`** (e.g. `workspace/data/my-widget-state.json`). Use `write_file` and `read_file` with `workspace/data/` paths for any persistent data your widgets need.
@@ -236,3 +292,4 @@ Use this for dashboards, live feeds, or any widget that should stay current with
 - **Using wrong field name for script**: The fetch body must use `script` (not `name`, `scriptName`, or `script_name`). Copy the `callBackend` helper from the template above exactly.
 - **Child agent trying to spawn sub-agents**: Opus child agents do NOT have `spawn_agent`. Always include "you are a child agent, build everything directly" in the spawn prompt.
 - **Using `/api/run-script` instead of `/api/widget-exec`**: There is NO `/api/run-script` endpoint. The `run_script` tool is for agent-side execution only. Widget HTML must always fetch `/api/widget-exec` to run saved scripts.
+- **Polling webhooks from widgets**: Do NOT build widgets that poll `/api/webhooks?action=poll` on a timer — that's the agent-facing endpoint and marks payloads as processed. If a widget needs live data from webhooks, use `mode: "direct"` when registering the webhook and poll `/api/webhook-data` instead. See the "Webhooks → Widget (Direct Mode)" section above.

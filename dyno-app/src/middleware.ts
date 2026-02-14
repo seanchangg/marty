@@ -19,6 +19,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/webhook/",       // Public webhook ingestion (HMAC auth)
   "/api/widget-html/",   // Served in sandboxed iframes (can't attach JWT)
   "/api/widget-exec",    // Called from within widget iframes
+  "/api/webhook-data",   // Widget-facing webhook data (direct mode, read-only)
 ];
 
 export async function middleware(req: NextRequest) {

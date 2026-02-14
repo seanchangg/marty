@@ -169,9 +169,40 @@ body {
 }
 
 .widget-container {
+  background: transparent;
+  border: none;
+  overflow: visible;
+}
+
+.widget-inner {
   background: #1B291E;
-  border: 1px solid rgba(47, 84, 52, 0.2);
+  border: 2px solid rgba(47, 84, 52, 0.2);
+  border-radius: 0px;
   overflow: hidden;
+  height: 100%;
+  transition: transform 0.25s ease, border-color 0.25s ease, border-radius 0.25s ease, box-shadow 0.25s ease;
+}
+
+.widget-inner:hover {
+  transform: scale(1.01);
+  border-color: rgba(168, 213, 186, 0.45);
+  border-radius: 8px;
+}
+
+.widget-inner:focus-within {
+  transform: scale(1.008);
+  border-color: rgba(168, 213, 186, 0.55);
+  border-radius: 8px;
+}
+
+/* Breathing glow for actively-updating widgets */
+@keyframes widget-breathe {
+  0%, 100% { box-shadow: 0 0 0px rgba(168, 213, 186, 0); }
+  50% { box-shadow: 0 0 14px rgba(168, 213, 186, 0.15); }
+}
+
+.widget-inner:has(.widget-active) {
+  animation: widget-breathe 2.5s ease-in-out infinite;
 }
 
 .react-grid-placeholder {

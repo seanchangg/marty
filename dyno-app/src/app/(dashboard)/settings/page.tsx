@@ -205,7 +205,7 @@ export default function SettingsPage() {
     setAutonomousSaving(true);
     setAutonomousStatus(null);
     try {
-      // If enabling, decrypt the API key to send to the server
+      // If enabling, decrypt the API key to persist server-side
       let decryptedApiKey: string | null = null;
       if (chatSettings.autonomousEnabled) {
         decryptedApiKey = await getDecryptedApiKey(profile?.encrypted_api_key);
@@ -233,36 +233,42 @@ export default function SettingsPage() {
         return;
       }
 
-      // Start or stop heartbeat via gateway
-      const action = chatSettings.autonomousEnabled ? "start" : "stop";
-      const hbPayload: Record<string, unknown> = {
-        action,
-        userId: user.id,
-        config: {
-          heartbeatIntervalMinutes: chatSettings.heartbeatIntervalMinutes,
-          dailyBudgetCapUsd: chatSettings.dailyBudgetCapUsd,
-          triageModel: chatSettings.triageModel,
-          escalationModel: chatSettings.escalationModel,
-        },
-      };
-      // Include API key only when enabling — server stores it for autonomous access
-      if (action === "start" && decryptedApiKey) {
-        hbPayload.apiKey = decryptedApiKey;
-      }
-
-      const hbRes = await authFetch("/api/heartbeat-config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(hbPayload),
-      });
-      const hbData = await hbRes.json();
-      if (!hbRes.ok) {
-        setAutonomousStatus(`Saved settings, but gateway error: ${hbData.error}`);
-      } else {
+      // Persist or clear server-side API key via gateway
+      if (chatSettings.autonomousEnabled && decryptedApiKey) {
+        const res = await authFetch("/api/heartbeat-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "start",
+            userId: user.id,
+            apiKey: decryptedApiKey,
+            config: {},
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          setAutonomousStatus(`Saved settings, but failed to persist API key: ${data.error}`);
+          return;
+        }
         setAutonomousStatus(
-          chatSettings.autonomousEnabled
-            ? "Autonomous mode enabled. Heartbeat started."
-            : "Autonomous mode disabled. Heartbeat stopped. Server-side API key removed."
+          "Autonomous mode enabled. Your agent can now be woken by webhooks."
+        );
+      } else {
+        const res = await authFetch("/api/heartbeat-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "stop",
+            userId: user.id,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          setAutonomousStatus(`Saved settings, but failed to clear API key: ${data.error}`);
+          return;
+        }
+        setAutonomousStatus(
+          "Autonomous mode disabled. Server-side API key removed."
         );
       }
     } catch {
@@ -566,18 +572,19 @@ export default function SettingsPage() {
 
       <Card className={`mb-6 ${chatSettings.autonomousEnabled ? "border border-red-500/40" : ""}`}>
         <h2 className="text-sm font-semibold text-text/70 mb-4">
-          Autonomous Mode (Dangerous)
+          Autonomous Mode
         </h2>
         <div className="flex flex-col gap-5">
           {chatSettings.autonomousEnabled && (
             <div className="flex flex-col gap-2">
               <div className="bg-red-500/10 border border-red-500/30 px-3 py-2 text-xs text-red-400">
-                Autonomous mode is active. Your agent will periodically wake up and take actions
-                without your input. A daily budget cap is strongly recommended.
+                Autonomous mode is active. External services can wake your agent via webhooks
+                and it will take actions without your input.
               </div>
               <div className="bg-yellow-500/10 border border-yellow-500/30 px-3 py-2 text-xs text-yellow-400">
-                Your API key will be stored server-side (encrypted) so the agent can operate
-                while you are offline. It will be automatically deleted when you disable autonomous mode.
+                Your API key is stored server-side (encrypted) so the agent can process
+                incoming webhooks while you are offline. It will be automatically deleted
+                when you disable autonomous mode.
               </div>
             </div>
           )}
@@ -585,10 +592,10 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <div>
               <label className="text-sm text-text/70">
-                Enable autonomous heartbeat
+                Enable autonomous mode
               </label>
               <p className="text-xs text-text/30 mt-0.5">
-                Agent wakes periodically to check heartbeat.md for tasks.
+                Allow webhooks to wake the agent and trigger actions while you are offline.
               </p>
             </div>
             <button
@@ -617,122 +624,11 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-sm text-text/70">
-                Heartbeat interval
-              </label>
-              <span className="text-sm font-mono text-highlight">
-                {chatSettings.heartbeatIntervalMinutes}m
-              </span>
-            </div>
-            <input
-              type="range"
-              min={5}
-              max={120}
-              step={5}
-              value={chatSettings.heartbeatIntervalMinutes}
-              onChange={(e) =>
-                setChatSettings((s) => ({
-                  ...s,
-                  heartbeatIntervalMinutes: Number(e.target.value),
-                }))
-              }
-              className="w-full accent-primary"
-              disabled={!chatSettings.autonomousEnabled}
-            />
-            <p className="text-xs text-text/30 mt-1">
-              How often the agent wakes to check for tasks (5–120 minutes).
-            </p>
-          </div>
-
-          <div>
-            <label
-              htmlFor="budget-cap"
-              className="text-sm text-text/70 block mb-1.5"
-            >
-              Daily budget cap (USD)
-            </label>
-            <input
-              id="budget-cap"
-              type="number"
-              min={0}
-              step={0.01}
-              value={chatSettings.dailyBudgetCapUsd ?? ""}
-              onChange={(e) =>
-                setChatSettings((s) => ({
-                  ...s,
-                  dailyBudgetCapUsd: e.target.value ? Number(e.target.value) : null,
-                }))
-              }
-              placeholder="No limit"
-              className="w-full bg-background border border-primary/30 px-3 py-2 text-sm text-text placeholder:text-text/40 focus:outline-none focus:border-highlight transition-colors font-mono"
-              disabled={!chatSettings.autonomousEnabled}
-            />
-            <p className="text-xs text-text/30 mt-1">
-              Auto-pauses heartbeat when daily spending exceeds this amount. Leave empty for no limit.
-            </p>
-          </div>
-
-          <div>
-            <label
-              htmlFor="triage-model"
-              className="text-sm text-text/70 block mb-1.5"
-            >
-              Triage model
-            </label>
-            <select
-              id="triage-model"
-              value={chatSettings.triageModel}
-              onChange={(e) =>
-                setChatSettings((s) => ({
-                  ...s,
-                  triageModel: e.target.value,
-                }))
-              }
-              className="w-full bg-background border border-primary/30 px-3 py-2 text-sm text-text focus:outline-none focus:border-highlight transition-colors"
-              disabled={!chatSettings.autonomousEnabled}
-            >
-              <option value="claude-haiku-4-5-20251001">Haiku 4.5 (cheapest)</option>
-              <option value="claude-sonnet-4-5-20250929">Sonnet 4.5</option>
-            </select>
-            <p className="text-xs text-text/30 mt-1">
-              Model used to decide if anything needs attention. Haiku recommended (~$0.024/day idle).
-            </p>
-          </div>
-
-          <div>
-            <label
-              htmlFor="escalation-model"
-              className="text-sm text-text/70 block mb-1.5"
-            >
-              Escalation model
-            </label>
-            <select
-              id="escalation-model"
-              value={chatSettings.escalationModel}
-              onChange={(e) =>
-                setChatSettings((s) => ({
-                  ...s,
-                  escalationModel: e.target.value,
-                }))
-              }
-              className="w-full bg-background border border-primary/30 px-3 py-2 text-sm text-text focus:outline-none focus:border-highlight transition-colors"
-              disabled={!chatSettings.autonomousEnabled}
-            >
-              <option value="claude-sonnet-4-5-20250929">Sonnet 4.5</option>
-              <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
-            </select>
-            <p className="text-xs text-text/30 mt-1">
-              Model used when triage determines action is needed.
-            </p>
-          </div>
-
           <Button
             onClick={handleSaveAutonomous}
             disabled={autonomousSaving}
           >
-            {autonomousSaving ? "Saving..." : "Save Autonomous Settings"}
+            {autonomousSaving ? "Saving..." : "Save"}
           </Button>
 
           {autonomousStatus && (

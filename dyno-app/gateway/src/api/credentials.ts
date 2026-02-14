@@ -29,11 +29,11 @@ const CREDENTIAL_NAME_RE = /^[A-Z0-9_]{1,64}$/;
  * Verify the request's Authorization header and return the authenticated userId.
  * Returns null and sends a 401 response if auth fails.
  */
-function authenticateRequest(
+async function authenticateRequest(
   req: IncomingMessage,
   res: ServerResponse,
   verifier: SupabaseVerifier | null,
-): string | null {
+): Promise<string | null> {
   if (!verifier) {
     // No verifier configured — allow (dev mode). userId comes from body/query.
     return "__skip__";
@@ -45,7 +45,7 @@ function authenticateRequest(
     return null;
   }
 
-  const result = verifier.verify(authHeader.slice(7));
+  const result = await verifier.verify(authHeader.slice(7));
   if (!result.valid || !result.userId) {
     sendJson(res, 401, { error: result.error || "Invalid token" });
     return null;
@@ -78,7 +78,7 @@ export async function handleCredentialsRequest(
   }
 
   // Authenticate — all credential endpoints require a valid JWT
-  const authedUserId = authenticateRequest(req, res, deps.verifier);
+  const authedUserId = await authenticateRequest(req, res, deps.verifier);
   if (authedUserId === null) return true; // 401 already sent
 
   // POST /api/credentials/retrieve — decrypt and return value

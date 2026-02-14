@@ -1,22 +1,13 @@
 /**
  * Supabase JWT verifier for Gateway WebSocket authentication.
  *
- * Validates JWTs from the Marty frontend to resolve the userId
- * and route to the correct per-user agent.
+ * Uses the Supabase Auth API (auth.getUser) to validate tokens,
+ * which works with both legacy JWT secrets and new signing keys.
  */
 
-import { createHmac } from "crypto";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
-
-interface JwtPayload {
-  sub: string;       // Supabase user ID
-  aud: string;       // Audience
-  exp: number;       // Expiration timestamp
-  iat: number;       // Issued at
-  email?: string;
-  role?: string;
-}
 
 export interface VerifyResult {
   valid: boolean;
@@ -28,49 +19,40 @@ export interface VerifyResult {
 // ── SupabaseVerifier ─────────────────────────────────────────────────────────
 
 export class SupabaseVerifier {
-  private jwtSecret: string;
+  private supabase: SupabaseClient;
 
-  constructor(jwtSecret: string) {
-    this.jwtSecret = jwtSecret;
+  constructor() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !serviceKey) {
+      throw new Error("NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for JWT verification");
+    }
+    this.supabase = createClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
   }
 
   /**
-   * Verify a Supabase JWT token.
-   * Returns the userId (sub claim) if valid.
+   * Verify a Supabase JWT token via the Auth API.
+   * Returns the userId if valid.
    */
-  verify(token: string): VerifyResult {
+  async verify(token: string): Promise<VerifyResult> {
     try {
-      const parts = token.split(".");
-      if (parts.length !== 3) {
-        return { valid: false, userId: null, email: null, error: "Invalid JWT format" };
-      }
+      const { data: { user }, error } = await this.supabase.auth.getUser(token);
 
-      const [headerB64, payloadB64, signatureB64] = parts;
-
-      // Verify signature using HMAC-SHA256
-      const data = `${headerB64}.${payloadB64}`;
-      const expectedSig = createHmac("sha256", this.jwtSecret)
-        .update(data)
-        .digest("base64url");
-
-      if (expectedSig !== signatureB64) {
-        return { valid: false, userId: null, email: null, error: "Invalid signature" };
-      }
-
-      // Decode payload
-      const payload: JwtPayload = JSON.parse(
-        Buffer.from(payloadB64, "base64url").toString("utf-8")
-      );
-
-      // Check expiration
-      if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-        return { valid: false, userId: null, email: null, error: "Token expired" };
+      if (error || !user) {
+        return {
+          valid: false,
+          userId: null,
+          email: null,
+          error: error?.message || "No user returned",
+        };
       }
 
       return {
         valid: true,
-        userId: payload.sub,
-        email: payload.email || null,
+        userId: user.id,
+        email: user.email || null,
         error: null,
       };
     } catch (err) {

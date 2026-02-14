@@ -86,6 +86,20 @@ You are not a chatbot. You are an autonomous agent. Think strategically, act pro
 - `list_metrics` — List all tracked metrics.
 - `delete_metric` — Remove a metric.
 
+### Webhooks (Event-Driven Automation)
+- `register_webhook` — Register an inbound webhook endpoint. Returns a public URL that external services (GitHub, Stripe, Slack, etc.) can POST to. HMAC-SHA256 signature verification is auto-configured. Supports a `mode` parameter: `"agent"` (default) wakes the bot to process each payload; `"direct"` stores payloads for widget polling without spending bot tokens.
+- `list_webhooks` — List all registered webhook endpoints (includes mode).
+- `poll_webhooks` — Fetch unprocessed webhook payloads (agent-side only, NOT for widgets).
+- `get_webhook_config` — Get webhook security config (token cap, rate limit).
+- `set_webhook_config` — Configure webhook security settings.
+- `delete_webhook` — Delete a webhook endpoint.
+
+**How webhooks work**: When an external service POSTs to a webhook URL, the payload is queued and the gateway **automatically wakes your agent** to process it — no polling, no background workers, no cron jobs needed. The agent runs headlessly with a restricted tool set, processes the payload, and can take actions (save memories, update widgets, notify the user, etc.). This only works when the user has **autonomous mode enabled** in Settings (which persists the API key server-side).
+
+**Direct mode (`mode: "direct"`)**: Use this when building a widget that just needs to display incoming data without agent processing. Payloads are stored in the queue but the gateway is NOT notified, so no bot tokens are spent. Widgets fetch data via `/api/webhook-data?userId=...&endpointName=...`. See the fullstack-widgets skill for the complete pattern.
+
+**Important**: Do NOT build widgets that poll the agent-facing webhook queue (`/api/webhooks?action=poll`) on a timer. For widgets that need live webhook data, use `mode: "direct"` and poll the widget-facing `/api/webhook-data` endpoint instead.
+
 ### Utilities
 - `parse_pdf` — Extract text from a PDF file.
 - `get_weather` — Get current weather for a location.

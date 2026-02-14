@@ -56,6 +56,15 @@ TOOL_DEFS = [
                         "Examples: github_push, oauth_callback, stripe_events"
                     ),
                 },
+                "mode": {
+                    "type": "string",
+                    "enum": ["agent", "direct"],
+                    "description": (
+                        "agent = bot processes each payload (default). "
+                        "direct = stored for widget polling only, no bot tokens spent."
+                    ),
+                    "default": "agent",
+                },
             },
             "required": ["userId", "endpoint_name"],
         },
@@ -187,11 +196,13 @@ async def handle_register_webhook(input_data: dict) -> str:
 
     # Generate a secure shared secret
     secret = secrets.token_hex(32)
+    mode = input_data.get("mode", "agent")
 
     payload = json.dumps({
         "userId": user_id,
         "endpointName": endpoint_name,
         "secret": secret,
+        "mode": mode,
     }).encode()
 
     req = urllib.request.Request(
@@ -207,10 +218,20 @@ async def handle_register_webhook(input_data: dict) -> str:
             url = result.get("url", "")
             action = result.get("action", "created")
 
+            mode_note = ""
+            if mode == "direct":
+                mode_note = (
+                    f"\nMode: direct (widget polling only — no bot tokens spent)\n"
+                    f"Widget endpoint: /api/webhook-data?userId={user_id}&endpointName={endpoint_name}"
+                )
+            else:
+                mode_note = "\nMode: agent (gateway processes each payload)"
+
             return (
                 f"Webhook endpoint '{endpoint_name}' {action}.\n"
                 f"URL: {url}\n"
-                f"Secret: {secret}\n\n"
+                f"Secret: {secret}\n"
+                f"{mode_note}\n\n"
                 f"Callers must include the header:\n"
                 f"  X-Webhook-Signature: sha256=<HMAC-SHA256 hex digest of the request body using the secret>"
             )
@@ -239,8 +260,9 @@ async def handle_list_webhooks(input_data: dict) -> str:
             lines = []
             for ep in endpoints:
                 status = "enabled" if ep.get("enabled") else "disabled"
+                mode = ep.get("mode", "agent")
                 lines.append(
-                    f"  {ep['endpoint_name']} ({status})\n"
+                    f"  {ep['endpoint_name']} ({status}, mode={mode})\n"
                     f"    URL: {ep.get('url', 'N/A')}"
                 )
             return "Registered webhooks:\n" + "\n".join(lines)

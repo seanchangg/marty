@@ -98,7 +98,7 @@ export async function POST(
   // ── Endpoint lookup ──────────────────────────────────────────────────────
   const { data: endpoint, error: lookupError } = await supabase
     .from("webhook_endpoints")
-    .select("secret, enabled")
+    .select("secret, enabled, mode")
     .eq("user_id", userId)
     .eq("endpoint_name", endpointName)
     .single();
@@ -171,20 +171,22 @@ export async function POST(
     return NextResponse.json({ error: "Failed to queue webhook" }, { status: 500 });
   }
 
-  // ── Notify Gateway (with internal auth) ──────────────────────────────────
-  try {
-    fetch(`${GATEWAY_HTTP_URL}/internal/webhook-notify`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${WEBHOOK_INTERNAL_SECRET}`,
-      },
-      body: JSON.stringify({ userId, endpointName }),
-    }).catch((err) => {
-      console.warn("[webhook] Gateway notify failed:", err);
-    });
-  } catch {
-    // Non-critical — webhook is already queued
+  // ── Notify Gateway (skip for direct-mode endpoints) ─────────────────────
+  if (endpoint.mode !== "direct") {
+    try {
+      fetch(`${GATEWAY_HTTP_URL}/internal/webhook-notify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${WEBHOOK_INTERNAL_SECRET}`,
+        },
+        body: JSON.stringify({ userId, endpointName }),
+      }).catch((err) => {
+        console.warn("[webhook] Gateway notify failed:", err);
+      });
+    } catch {
+      // Non-critical — webhook is already queued
+    }
   }
 
   return NextResponse.json({ ok: true, message: "Webhook received" }, { status: 200 });

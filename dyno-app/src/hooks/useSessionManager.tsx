@@ -16,6 +16,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { useAgentStatus } from "@/hooks/useAgentStatus";
 import { WS_URL } from "@/lib/agent-config";
 import { authFetch } from "@/lib/api";
+import { supabase } from "@/lib/supabase/client";
 
 const RECONNECT_DELAY_MS = 3000;
 const CHILD_SESSION_PREFIX = "marty-child-";
@@ -504,26 +505,10 @@ export function SessionManagerProvider({ children, onUIAction }: SessionManagerP
         break;
       }
 
-      case "heartbeat_escalated":
-        toastRef.current(
-          `Heartbeat escalated: ${data.reason || "Task needs attention"}`,
-          "info"
-        );
-        break;
-
-      case "heartbeat_completed":
-        toastRef.current(
-          `Heartbeat completed ($${(data.totalCost as number)?.toFixed(4) || "0"})${data.summary ? `: ${(data.summary as string).slice(0, 80)}` : ""}`,
-          "success"
-        );
-        break;
-
-      case "heartbeat_budget_exceeded":
-        toastRef.current(
-          `Heartbeat budget exceeded ($${(data.dailyCost as number)?.toFixed(4)}/$${data.budgetCap}). Auto-paused.`,
-          "error"
-        );
-        break;
+      // Heartbeat events disabled — using webhook system instead
+      // case "heartbeat_escalated":
+      // case "heartbeat_completed":
+      // case "heartbeat_budget_exceeded":
 
       case "error":
         toastRef.current(data.message || "An error occurred.", "error");
@@ -542,14 +527,29 @@ export function SessionManagerProvider({ children, onUIAction }: SessionManagerP
 
   // ── Persistent WebSocket connection ──────────────────────────────────────
 
-  const connectWs = useCallback(() => {
+  const connectWs = useCallback(async () => {
     if (!mountedRef.current) return;
     // Don't create a second connection if one is already open/connecting
     if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
       return;
     }
 
-    const ws = new WebSocket(WS_URL);
+    // Attach Supabase JWT so the gateway can identify the user
+    let wsUrl = WS_URL;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const sep = wsUrl.includes("?") ? "&" : "?";
+        wsUrl = `${wsUrl}${sep}token=${session.access_token}`;
+        console.log("[ws] Attaching JWT token to WebSocket URL");
+      } else {
+        console.warn("[ws] No Supabase session — connecting unauthenticated");
+      }
+    } catch (err) {
+      console.warn("[ws] Failed to get Supabase session:", err);
+    }
+
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {

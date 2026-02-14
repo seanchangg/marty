@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getAuthUserId } from "@/lib/auth";
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+const PUBLIC_URL = process.env.NEXT_PUBLIC_APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
 
 /**
  * GET /api/webhooks?userId=...&action=poll&endpointName=...
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
   // Default: list endpoints
   const { data, error } = await supabase
     .from("webhook_endpoints")
-    .select("id, endpoint_name, enabled, created_at")
+    .select("id, endpoint_name, enabled, mode, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
   // Attach public URLs
   const endpoints = (data || []).map((ep) => ({
     ...ep,
-    url: `${FRONTEND_URL}/api/webhook/${userId}/${ep.endpoint_name}`,
+    url: `${PUBLIC_URL}/api/webhook/${userId}/${ep.endpoint_name}`,
   }));
 
   return NextResponse.json({ endpoints });
@@ -104,6 +104,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const userId = getAuthUserId(req) || body.userId;
   const { endpointName, secret } = body;
+  const mode = body.mode === "direct" ? "direct" : "agent";
 
   if (!userId || !endpointName || !secret) {
     return NextResponse.json(
@@ -133,7 +134,7 @@ export async function POST(req: NextRequest) {
   if (existing) {
     const { error } = await supabase
       .from("webhook_endpoints")
-      .update({ secret, enabled: true })
+      .update({ secret, enabled: true, mode })
       .eq("id", existing.id);
 
     if (error) {
@@ -143,13 +144,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       action: "updated",
-      url: `${FRONTEND_URL}/api/webhook/${userId}/${endpointName}`,
+      url: `${PUBLIC_URL}/api/webhook/${userId}/${endpointName}`,
     });
   }
 
   const { error } = await supabase
     .from("webhook_endpoints")
-    .insert({ user_id: userId, endpoint_name: endpointName, secret });
+    .insert({ user_id: userId, endpoint_name: endpointName, secret, mode });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
@@ -158,7 +159,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     action: "created",
-    url: `${FRONTEND_URL}/api/webhook/${userId}/${endpointName}`,
+    url: `${PUBLIC_URL}/api/webhook/${userId}/${endpointName}`,
   });
 }
 
