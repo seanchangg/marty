@@ -228,7 +228,7 @@ export default function WidgetCanvas({
                 className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"
                 style={{ animation: "fade-in 0.6s ease-out both" }}
               >
-                <DynoSprite status="online" size={80} noTrack />
+                <DynoSprite status="online" size={80} />
                 <p
                   className="mt-4 text-sm text-text/30"
                   style={{ animation: "empty-pulse 3s ease-in-out infinite" }}

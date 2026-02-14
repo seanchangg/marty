@@ -8,6 +8,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { v4 as uuidv4 } from "uuid";
 import type { ActivityLogger } from "./activity-logger.js";
+import type { LayoutStore } from "./layout-store.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -275,6 +276,7 @@ export class OrchestrationHandler {
   private skillsPrompt: string;
   private userId: string | null;
   private activityLogger: ActivityLogger | null;
+  private layoutStore: LayoutStore | null;
   private getAgentTools: () => Anthropic.Tool[];
   private getAutoApproved: () => Set<string>;
   private executeLegacyTool: (name: string, input: Record<string, unknown>) => Promise<string>;
@@ -286,6 +288,7 @@ export class OrchestrationHandler {
     skillsPrompt: string;
     userId: string | null;
     activityLogger?: ActivityLogger | null;
+    layoutStore?: LayoutStore | null;
     getAgentTools: () => Anthropic.Tool[];
     getAutoApproved: () => Set<string>;
     executeLegacyTool: (name: string, input: Record<string, unknown>) => Promise<string>;
@@ -296,6 +299,7 @@ export class OrchestrationHandler {
     this.skillsPrompt = opts.skillsPrompt;
     this.userId = opts.userId;
     this.activityLogger = opts.activityLogger ?? null;
+    this.layoutStore = opts.layoutStore ?? null;
     this.getAgentTools = opts.getAgentTools;
     this.getAutoApproved = opts.getAutoApproved;
     this.executeLegacyTool = opts.executeLegacyTool;
@@ -795,6 +799,7 @@ export class OrchestrationHandler {
       return JSON.stringify({ status: "blocked", reason: "Child chat widgets can only be closed by the user." });
     }
 
+    // Send real-time update to frontend via WebSocket
     this.send({
       type: "ui_mutation",
       action,
@@ -808,6 +813,26 @@ export class OrchestrationHandler {
       tabLabel: input.tabLabel,
       tabIndex: input.tabIndex,
     });
+
+    // Persist directly to Supabase so the layout survives page reloads
+    // and isn't lost if the WebSocket message arrives before the frontend
+    // finishes loading its layout from Supabase.
+    if (this.layoutStore && this.userId) {
+      this.layoutStore.applyMutation(this.userId, {
+        action,
+        widgetId: widgetId || undefined,
+        widgetType: input.widgetType as string | undefined,
+        position: input.position as { x: number; y: number } | undefined,
+        size: input.size as { w: number; h: number } | undefined,
+        props: input.props as Record<string, unknown> | undefined,
+        sessionId: input.sessionId as string | undefined,
+        tabId: input.tabId as string | undefined,
+        tabLabel: input.tabLabel as string | undefined,
+        tabIndex: input.tabIndex as number | undefined,
+      }).catch((err) => {
+        console.warn("[orchestration] Layout persist error:", err);
+      });
+    }
 
     return JSON.stringify({ status: "ok", action, widgetId: widgetId || undefined, tabId: input.tabId || undefined });
   }

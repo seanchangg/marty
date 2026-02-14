@@ -14,6 +14,7 @@ interface DynoSpriteProps {
 export default function DynoSprite({ status, size = 64, noTrack = false }: DynoSpriteProps) {
   const leftEyeRef = useRef<SVGEllipseElement>(null);
   const rightEyeRef = useRef<SVGEllipseElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number>(0);
 
@@ -24,6 +25,23 @@ export default function DynoSprite({ status, size = 64, noTrack = false }: DynoS
   const rightEyeCX = size * 0.64;
   const mouthY = size * 0.58;
   const maxEyeShift = size * 0.04;
+
+  const maxSkewAngle = 5; // degrees
+
+  /** Apply a CSS skewX to the whole SVG, anchored at bottom center. */
+  const applyLean = useCallback((dx: number) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const nx = dx / maxEyeShift;
+    const skew = -nx * maxSkewAngle;
+    svg.style.transform = `skewX(${skew}deg)`;
+  }, [maxEyeShift, maxSkewAngle]);
+
+  const resetLean = useCallback(() => {
+    const svg = svgRef.current;
+    if (svg) svg.style.transform = "skewX(0deg)";
+  }, []);
+
   // ── Cursor tracking (online only) ──────────────────────────────────────
 
   const onMouseMove = useCallback((e: MouseEvent) => {
@@ -32,9 +50,9 @@ export default function DynoSprite({ status, size = 64, noTrack = false }: DynoS
     const re = rightEyeRef.current;
     if (!el || !le || !re) return;
 
-    const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
+    const elRect = el.getBoundingClientRect();
+    const cx = elRect.left + elRect.width / 2;
+    const cy = elRect.top + elRect.height / 2;
 
     const dx = e.clientX - cx;
     const dy = e.clientY - cy;
@@ -48,7 +66,9 @@ export default function DynoSprite({ status, size = 64, noTrack = false }: DynoS
     le.setAttribute("cy", String(eyeY + ny));
     re.setAttribute("cx", String(rightEyeCX + nx));
     re.setAttribute("cy", String(eyeY + ny));
-  }, [leftEyeCX, rightEyeCX, eyeY, maxEyeShift]);
+
+    applyLean(nx);
+  }, [leftEyeCX, rightEyeCX, eyeY, maxEyeShift, applyLean]);
 
   useEffect(() => {
     if (noTrack || status !== "online") return;
@@ -71,6 +91,7 @@ export default function DynoSprite({ status, size = 64, noTrack = false }: DynoS
         le.setAttribute("ry", String(eyeRadius));
         re.setAttribute("ry", String(eyeRadius));
       }
+      if (status !== "sleeping") resetLean();
       return;
     }
 
@@ -111,12 +132,14 @@ export default function DynoSprite({ status, size = 64, noTrack = false }: DynoS
       re.setAttribute("cx", String(rightEyeCX + dx));
       re.setAttribute("cy", String(eyeY + dy));
 
+      applyLean(dx);
+
       animRef.current = requestAnimationFrame(animate);
     };
 
     animRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animRef.current);
-  }, [status, size, leftEyeCX, rightEyeCX, eyeY, maxEyeShift, eyeRadius]);
+  }, [status, size, leftEyeCX, rightEyeCX, eyeY, maxEyeShift, eyeRadius, applyLean, resetLean]);
 
   // ── Sleeping animation (eyes closed, gentle breathing) ─────────────────
 
@@ -127,7 +150,6 @@ export default function DynoSprite({ status, size = 64, noTrack = false }: DynoS
     const re = rightEyeRef.current;
     if (!le || !re) return;
 
-    // Close eyes immediately
     le.setAttribute("cx", String(leftEyeCX));
     le.setAttribute("cy", String(eyeY));
     re.setAttribute("cx", String(rightEyeCX));
@@ -136,15 +158,15 @@ export default function DynoSprite({ status, size = 64, noTrack = false }: DynoS
     re.style.transition = "ry 0.4s ease-out";
     le.setAttribute("ry", String(eyeRadius * 0.12));
     re.setAttribute("ry", String(eyeRadius * 0.12));
+    resetLean();
 
     return () => {
-      // Open eyes on wake
       le.style.transition = "ry 0.2s ease-out";
       re.style.transition = "ry 0.2s ease-out";
       le.setAttribute("ry", String(eyeRadius));
       re.setAttribute("ry", String(eyeRadius));
     };
-  }, [status, leftEyeCX, rightEyeCX, eyeY, eyeRadius]);
+  }, [status, leftEyeCX, rightEyeCX, eyeY, eyeRadius, resetLean]);
 
   // ── Random idle blink (online only) ────────────────────────────────────
 
@@ -181,13 +203,17 @@ export default function DynoSprite({ status, size = 64, noTrack = false }: DynoS
   const containerAnimation = (() => {
     switch (status) {
       case "online":
-        return "sprite-bob 4s ease-in-out infinite, pulse-glow 2s ease-in-out infinite";
       case "sleeping":
-        return "sprite-bob 6s ease-in-out infinite";
+        return `sprite-bob ${status === "sleeping" ? 6 : 4}s ease-in-out infinite`;
       default:
         return undefined;
     }
   })();
+
+  // Glow lives on the SVG so it skews with the face
+  const svgAnimation = (status === "online" || status === "working")
+    ? "pulse-glow 2s ease-in-out infinite"
+    : undefined;
 
   return (
     <div
@@ -204,10 +230,18 @@ export default function DynoSprite({ status, size = 64, noTrack = false }: DynoS
       }}
     >
       <svg
+        ref={svgRef}
         width={size}
         height={size}
         viewBox={`0 0 ${size} ${size}`}
         fill="none"
+        style={{
+          transform: "skewX(0deg)",
+          transformOrigin: "center bottom",
+          transition: "transform 0.15s ease-out",
+          willChange: "transform",
+          animation: svgAnimation,
+        }}
       >
         <rect
           width={size}

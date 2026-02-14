@@ -18,6 +18,7 @@ import {
   ORCHESTRATION_AUTO_APPROVED,
   type SendFn,
 } from "./orchestration.js";
+import type { LayoutStore } from "./layout-store.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -131,6 +132,7 @@ export class GatewayAgent {
   private userId: string | null = null;
   private toolPerms: ToolPermissions | null = null;
   private activityLogger: ActivityLogger | null = null;
+  private layoutStore: LayoutStore | null = null;
 
   constructor(config?: Partial<AgentConfig>) {
     this.config = {
@@ -200,6 +202,11 @@ export class GatewayAgent {
     }
   }
 
+  /** Set the layout store for persisting ui_action mutations. */
+  setLayoutStore(store: LayoutStore | null) {
+    this.layoutStore = store;
+  }
+
   /** Get the orchestration handler (for session state access). */
   getOrchestration(): OrchestrationHandler | null {
     return this.orchestration;
@@ -222,6 +229,7 @@ export class GatewayAgent {
       skillsPrompt: this.skillsPrompt,
       userId: this.userId,
       activityLogger: this.activityLogger,
+      layoutStore: this.layoutStore,
       getAgentTools: () => this.getLegacyTools(),
       getAutoApproved: () => this.getLegacyReadOnlyTools(),
       executeLegacyTool: (name, input) => this.executeLegacyTool(name, input),

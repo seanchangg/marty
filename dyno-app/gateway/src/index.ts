@@ -46,6 +46,7 @@ import { SkillRegistry } from "./skills/registry.js";
 import { SkillLoader } from "./skills/loader.js";
 import { ToolPermissions } from "./tool-permissions.js";
 import { ORCHESTRATION_TOOL_DEFS, ORCHESTRATION_TOOL_NAMES, ORCHESTRATION_AUTO_APPROVED } from "./orchestration.js";
+import { LayoutStore } from "./layout-store.js";
 // import { HeartbeatDaemon, type HeartbeatConfig } from "./heartbeat.js";
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -257,6 +258,15 @@ async function main() {
     console.log("[gateway] Activity logger disabled (missing Supabase credentials)");
   }
 
+  // Initialize layout store for persisting ui_action mutations to Supabase
+  let layoutStore: LayoutStore | null = null;
+  try {
+    layoutStore = new LayoutStore();
+    console.log("[gateway] Layout store enabled");
+  } catch {
+    console.log("[gateway] Layout store disabled (missing Supabase credentials)");
+  }
+
   // Load shared system prompt (cloud mode uses a restricted variant)
   const storageMode = process.env.STORAGE_MODE || "local";
   let sharedSystemPrompt = "You are a helpful AI agent managed through Marty.";
@@ -409,6 +419,7 @@ async function main() {
       agent.setUserId(authenticatedUserId);
     }
     agent.setActivityLogger(activityLogger);
+    agent.setLayoutStore(layoutStore);
     agent.initOrchestration();
 
     // Reuse existing channel on reconnect (hot-swap WebSocket)
