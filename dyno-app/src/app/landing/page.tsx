@@ -2,7 +2,6 @@
 
 import HeroSection from "@/components/landing/HeroSection";
 import FeatureSection from "@/components/landing/FeatureSection";
-import VideoPlaceholder from "@/components/landing/VideoPlaceholder";
 import WidgetPanorama from "@/components/landing/WidgetPanorama";
 import DynoSprite from "@/components/sprite/DynoSprite";
 import LandingCTA from "@/components/landing/LandingCTA";
@@ -28,7 +27,7 @@ export default function LandingPage() {
         title="Configure Context"
         description="Give your agent the knowledge it needs. Define memory, link integrations, and set behavioral rules — so it understands your world from day one."
       >
-        <VideoPlaceholder label="Demo — Context Configuration" />
+        <video src="/demo-context.mp4" autoPlay loop muted playsInline className="w-full border-2 border-primary/20" />
       </FeatureSection>
 
       {/* Section 4: Customize your Dashboard */}
@@ -37,15 +36,15 @@ export default function LandingPage() {
         description="Drag, resize, and arrange widgets on an infinite canvas. Build the control center that fits how you think — not the other way around."
         reverse
       >
-        <VideoPlaceholder label="Demo — Dashboard Customization" />
+        <video src="/demo-dashboard.mp4" autoPlay loop muted playsInline className="w-full border-2 border-primary/20" />
       </FeatureSection>
 
-      {/* Section 5: Manage Side-Assistants */}
+      {/* Section 5: Deploy Mini-Marty's */}
       <FeatureSection
         title="Deploy Mini-Marty's"
         description="Spin up focused sub-marty's (marties?) for specific jobs — research, scheduling, code review. Each one runs independently and reports back to your main agent."
       >
-        <VideoPlaceholder label="Demo — Side-Assistants" />
+        <video src="/demo-mini-martys.mp4" autoPlay loop muted playsInline className="w-full border-2 border-primary/20" />
       </FeatureSection>
 
       {/* Footer CTA */}
@@ -229,7 +228,7 @@ function HowItWorksSection() {
         </div>
 
         <div className="w-full mt-8">
-          <VideoPlaceholder label="Demo — Building a Widget" />
+          <video src="/demo-how-it-works.mp4" autoPlay loop muted playsInline className="w-full border-2 border-primary/20" />
         </div>
       </div>
     </section>
