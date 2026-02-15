@@ -45,6 +45,11 @@ const DEFAULT_SIZES: Record<string, { w: number; h: number }> = {
 
 export class LayoutStore {
   private supabase: SupabaseClient;
+  // Per-user promise queue to serialize mutations and prevent race conditions.
+  // Without this, sequential calls like tab_create → add widget can overlap:
+  // the second read happens before the first write completes, so the new tab
+  // doesn't exist yet and the widget add silently fails.
+  private mutationQueues = new Map<string, Promise<void>>();
 
   constructor() {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -60,10 +65,53 @@ export class LayoutStore {
   }
 
   /**
+   * Read the current layout from Supabase for the given user.
+   * Returns null if no layout exists.
+   */
+  async readLayout(userId: string): Promise<TabbedLayout | null> {
+    try {
+      const { data, error } = await this.supabase
+        .from("widget_layouts")
+        .select("layout")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn("[layout-store] Read error:", error.message);
+        return null;
+      }
+
+      return (data?.layout as TabbedLayout) ?? null;
+    } catch (err) {
+      console.warn("[layout-store] readLayout error:", err);
+      return null;
+    }
+  }
+
+  /**
    * Apply a ui_action mutation to the user's persisted layout in Supabase.
-   * Fire-and-forget — errors are logged but don't block the agent.
+   * Mutations for the same user are serialized so sequential actions
+   * (e.g. tab_create then add widget) see each other's results.
    */
   async applyMutation(userId: string, mutation: {
+    action: string;
+    widgetId?: string;
+    widgetType?: string;
+    position?: { x: number; y: number };
+    size?: { w: number; h: number };
+    props?: Record<string, unknown>;
+    sessionId?: string;
+    tabId?: string;
+    tabLabel?: string;
+    tabIndex?: number;
+  }): Promise<void> {
+    const prev = this.mutationQueues.get(userId) ?? Promise.resolve();
+    const next = prev.then(() => this._applyMutationInner(userId, mutation));
+    this.mutationQueues.set(userId, next.catch(() => {}));
+    return next;
+  }
+
+  private async _applyMutationInner(userId: string, mutation: {
     action: string;
     widgetId?: string;
     widgetType?: string;
@@ -252,11 +300,12 @@ export class LayoutStore {
       }
 
       case "tab_create": {
-        const newTabId = m.tabId || `tab-${Date.now()}`;
+        // tabId is always provided by orchestration.ts — never generate here
+        if (!m.tabId) return state;
         return {
           ...state,
-          activeTabId: newTabId,
-          tabs: [...state.tabs, { id: newTabId, label: m.tabLabel || "New Tab", widgets: [] }],
+          activeTabId: m.tabId,
+          tabs: [...state.tabs, { id: m.tabId, label: m.tabLabel || "New Tab", widgets: [] }],
         };
       }
 

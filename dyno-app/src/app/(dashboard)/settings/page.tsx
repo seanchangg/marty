@@ -16,7 +16,7 @@ import { DEFAULT_CHAT_SETTINGS } from "@/types";
 import { authFetch } from "@/lib/api";
 
 export default function SettingsPage() {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, refreshProfile } = useAuth();
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -87,6 +87,24 @@ export default function SettingsPage() {
         const data = await res.json();
         setKeyStatus(`Failed to store encrypted key: ${data.error}`);
         return;
+      }
+
+      // Refresh the profile in AuthProvider so ChatWindow sees the new ciphertext
+      await refreshProfile();
+
+      // If autonomous mode is enabled, also update the server-side API key
+      // so user_credentials stays in sync with the new key
+      if (chatSettings.autonomousEnabled) {
+        await authFetch("/api/heartbeat-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "start",
+            userId: user.id,
+            apiKey: apiKey.trim(),
+            config: {},
+          }),
+        }).catch(() => {});
       }
 
       setApiKey("");
@@ -191,6 +209,7 @@ export default function SettingsPage() {
         const data = await res.json();
         setChatSettingsStatus(`Failed to save: ${data.error}`);
       } else {
+        await refreshProfile();
         setChatSettingsStatus("Chat settings saved.");
       }
     } catch {

@@ -27,37 +27,66 @@ const SHAPES: Shape[] = [
   { type: "circle", x: "55%", y: "88%", width: 36, height: 36, color: "#2F5434", opacity: 0.15, depth: 0.025, spinDuration: 38, spinDirection: "ccw", delay: 0.35 },
 ];
 
+const REPULSION_RADIUS = 120;
+const REPULSION_STRENGTH = 0.8;
+const DAMPING = 0.9;
+const SPRING = 0.04;
+
 export default function FloatingShapes() {
   const shapeRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const mouseRef = useRef({ x: 0, y: 0 });
+  const mouseRef = useRef({ x: -9999, y: -9999 });
+  const offsetsRef = useRef(SHAPES.map(() => ({ x: 0, y: 0, vx: 0, vy: 0 })));
+  const animRef = useRef(0);
 
   useEffect(() => {
-    const cx = window.innerWidth / 2;
-    const cy = window.innerHeight / 2;
-
     const onMouseMove = (e: MouseEvent) => {
-      mouseRef.current = { x: e.clientX - cx, y: e.clientY - cy };
+      mouseRef.current = { x: e.clientX, y: e.clientY };
+    };
+    const onMouseLeave = () => {
+      mouseRef.current = { x: -9999, y: -9999 };
+    };
+
+    const tick = () => {
+      const mx = mouseRef.current.x;
+      const my = mouseRef.current.y;
 
       for (let i = 0; i < SHAPES.length; i++) {
         const el = shapeRefs.current[i];
         if (!el) continue;
-        const s = SHAPES[i];
-        const tx = mouseRef.current.x * s.depth;
-        const ty = mouseRef.current.y * s.depth;
-        el.style.transform = `translate(${tx}px, ${ty}px)`;
-      }
-    };
+        const o = offsetsRef.current[i];
 
-    const onMouseLeave = () => {
-      for (let i = 0; i < SHAPES.length; i++) {
-        const el = shapeRefs.current[i];
-        if (el) el.style.transform = "translate(0px, 0px)";
+        const rect = el.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = cx - mx;
+        const dy = cy - my;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < REPULSION_RADIUS && dist > 0) {
+          const force = (1 - dist / REPULSION_RADIUS) * REPULSION_STRENGTH;
+          o.vx += (dx / dist) * force;
+          o.vy += (dy / dist) * force;
+        }
+
+        o.vx -= o.x * SPRING;
+        o.vy -= o.y * SPRING;
+        o.vx *= DAMPING;
+        o.vy *= DAMPING;
+
+        o.x += o.vx;
+        o.y += o.vy;
+
+        el.style.transform = `translate(${o.x}px, ${o.y}px)`;
       }
+
+      animRef.current = requestAnimationFrame(tick);
     };
 
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseleave", onMouseLeave);
+    animRef.current = requestAnimationFrame(tick);
     return () => {
+      cancelAnimationFrame(animRef.current);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseleave", onMouseLeave);
     };
@@ -74,19 +103,20 @@ export default function FloatingShapes() {
             left: s.x,
             top: s.y,
             transition: "transform 0.3s ease-out",
-            animation: `float-in 0.7s ease-out ${s.delay}s both`,
           }}
         >
-          <div
-            style={{
-              width: s.width,
-              height: s.height,
-              backgroundColor: s.color,
-              opacity: s.opacity,
-              borderRadius: s.type === "circle" ? "50%" : 0,
-              animation: `slow-spin-${s.spinDirection} ${s.spinDuration}s linear infinite`,
-            }}
-          />
+          <div style={{ animation: `float-in 0.7s ease-out ${s.delay}s both` }}>
+            <div
+              style={{
+                width: s.width,
+                height: s.height,
+                backgroundColor: s.color,
+                opacity: s.opacity,
+                borderRadius: s.type === "circle" ? "50%" : 0,
+                animation: `slow-spin-${s.spinDirection} ${s.spinDuration}s linear infinite`,
+              }}
+            />
+          </div>
         </div>
       ))}
     </div>

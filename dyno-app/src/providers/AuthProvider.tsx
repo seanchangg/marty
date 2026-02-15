@@ -10,6 +10,7 @@ interface AuthContextValue {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
+  refreshProfile: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (
     email: string,
@@ -25,6 +26,7 @@ const AuthContext = createContext<AuthContextValue>({
   session: null,
   profile: null,
   loading: true,
+  refreshProfile: async () => {},
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null }),
   signOut: async () => {},
@@ -118,6 +120,10 @@ export default function AuthProvider({
     return serverSignIn(email, password);
   };
 
+  const refreshProfile = useCallback(async () => {
+    if (user) await fetchProfile(user.id);
+  }, [user, fetchProfile]);
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setProfile(null);
@@ -125,7 +131,7 @@ export default function AuthProvider({
 
   return (
     <AuthContext.Provider
-      value={{ user, session, profile, loading, signIn, signUp, signOut }}
+      value={{ user, session, profile, loading, refreshProfile, signIn, signUp, signOut }}
     >
       {children}
     </AuthContext.Provider>

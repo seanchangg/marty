@@ -7,6 +7,7 @@ import TabBar from "@/components/widgets/TabBar";
 import { useWidgetLayoutContext } from "@/hooks/useWidgetLayoutContext";
 import { useSession } from "@/hooks/useSessionManager";
 import { getAllWidgetTypes } from "@/lib/widgets/registry";
+import HtmlFilePicker from "@/components/widgets/HtmlFilePicker";
 import type { Widget } from "@/types/widget";
 
 /**
@@ -20,6 +21,7 @@ export default function PersistentDashboard() {
   const { layout, syncTabPositions, processUIAction } = useWidgetLayoutContext();
   const { cancelSession } = useSession("master");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [htmlPickerOpen, setHtmlPickerOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [mountedTabs, setMountedTabs] = useState<Set<string>>(() => new Set([layout.activeTabId]));
 
@@ -82,9 +84,28 @@ export default function PersistentDashboard() {
 
   const handleAddWidget = useCallback(
     (widgetType: string) => {
+      if (widgetType === "html") {
+        setHtmlPickerOpen(true);
+        setMenuOpen(false);
+        return;
+      }
       const id = `${widgetType}-${Date.now()}`;
       processUIAction({ action: "add", widgetId: id, widgetType });
       setMenuOpen(false);
+    },
+    [processUIAction]
+  );
+
+  const handleHtmlFileSelect = useCallback(
+    (filename: string) => {
+      const id = `html-${Date.now()}`;
+      processUIAction({
+        action: "add",
+        widgetId: id,
+        widgetType: "html",
+        props: { src: `/api/widget-html/${filename}` },
+      });
+      setHtmlPickerOpen(false);
     },
     [processUIAction]
   );
@@ -192,6 +213,13 @@ export default function PersistentDashboard() {
           {menuOpen ? "\u00D7" : "+"}
         </button>
       </div>
+
+      {htmlPickerOpen && (
+        <HtmlFilePicker
+          onSelect={handleHtmlFileSelect}
+          onClose={() => setHtmlPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -158,7 +158,7 @@ export default function LoginParticleCanvas() {
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 z-0"
+      className="fixed inset-0 z-0 pointer-events-none"
       style={{ animation: "canvas-fade 0.8s ease-out 0.1s both" }}
     />
   );

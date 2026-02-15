@@ -712,16 +712,34 @@ export class OrchestrationHandler {
 
   private async handleGetDashboardLayout(): Promise<string> {
     try {
-      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-      const serviceKey = process.env.INTERNAL_API_KEY || process.env.GATEWAY_KEY_STORE_SECRET || "dyno-dev-secret-change-in-production";
-      const res = await fetch(`${frontendUrl}/api/layout`, {
-        headers: {
-          Accept: "application/json",
-          "x-service-key": serviceKey,
-        },
-        signal: AbortSignal.timeout(5000),
-      });
-      const data = await res.json() as Record<string, unknown>;
+      let data: Record<string, unknown> | null = null;
+
+      // Authenticated users: read from Supabase (source of truth)
+      if (this.layoutStore && this.userId) {
+        data = await this.layoutStore.readLayout(this.userId) as Record<string, unknown> | null;
+      }
+
+      // Fallback for unauthenticated / local-mode: read from local file API
+      if (!data) {
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+        const serviceKey = process.env.INTERNAL_API_KEY || process.env.GATEWAY_KEY_STORE_SECRET || "dyno-dev-secret-change-in-production";
+        const res = await fetch(`${frontendUrl}/api/layout`, {
+          headers: {
+            Accept: "application/json",
+            "x-service-key": serviceKey,
+          },
+          signal: AbortSignal.timeout(5000),
+        });
+        data = await res.json() as Record<string, unknown>;
+      }
+
+      if (!data) {
+        return JSON.stringify({
+          tabs: [],
+          tabCount: 0,
+          note: "Dashboard is empty. Use ui_action with action='reset' to restore defaults.",
+        });
+      }
 
       // Handle TabbedLayout v2
       if (data.version === 2 && Array.isArray(data.tabs)) {
@@ -799,6 +817,13 @@ export class OrchestrationHandler {
       return JSON.stringify({ status: "blocked", reason: "Child chat widgets can only be closed by the user." });
     }
 
+    // For tab_create: generate a deterministic tab ID here so that
+    // both the WebSocket message and Supabase persist use the same ID,
+    // and the agent gets it back in the response.
+    if (action === "tab_create" && !input.tabId) {
+      input.tabId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+
     // Send real-time update to frontend via WebSocket
     this.send({
       type: "ui_mutation",
@@ -834,6 +859,6 @@ export class OrchestrationHandler {
       });
     }
 
-    return JSON.stringify({ status: "ok", action, widgetId: widgetId || undefined, tabId: input.tabId || undefined });
+    return JSON.stringify({ status: "ok", action, widgetId: widgetId || undefined, tabId: (input.tabId as string) || undefined });
   }
 }

@@ -2,6 +2,7 @@
 
 import React, { Suspense, useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { GridLayout } from "react-grid-layout";
+import { transformStrategy } from "react-grid-layout/core";
 import type { Layout, LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -61,6 +62,7 @@ export default function WidgetCanvas({
   const scrollRef = useRef<HTMLDivElement>(null);
   const snapTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
   const isSnappingRef = useRef(false);
+  const isDraggingRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
   const restoredRef = useRef(false);
 
@@ -73,6 +75,17 @@ export default function WidgetCanvas({
   // Snap distances in scrollbar coordinates (base × zoom)
   const snapX = BASE_SNAP_X * zoomScale;
   const snapY = BASE_SNAP_Y * zoomScale;
+
+  // ── Position strategy — tells the grid about the CSS zoom scale ───────
+  // We use transformStrategy's calcStyle but override `scale` so that
+  // react-draggable divides mouse deltas by the zoom factor.
+  // We intentionally omit calcDragPosition — the default parent-relative
+  // calculation already handles CSS zoom correctly with just `scale`.
+
+  const positionStrategy = useMemo(
+    () => ({ ...transformStrategy, scale: zoomScale }),
+    [zoomScale],
+  );
 
   // ── Layout ──────────────────────────────────────────────────────────────
 
@@ -108,6 +121,36 @@ export default function WidgetCanvas({
     [onLayoutChange],
   );
 
+  // Immediately sync layout on drag/resize end (bypass debounce)
+  const handleInteractionEnd = useCallback(
+    (finalLayout: Layout) => {
+      isDraggingRef.current = false;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      const current = widgetsRef.current;
+      const updated = current.map((w) => {
+        const l = finalLayout.find((n) => n.i === w.id);
+        if (!l) return w;
+        return { ...w, x: l.x, y: l.y, w: l.w, h: l.h };
+      });
+      onLayoutChange(updated);
+    },
+    [onLayoutChange],
+  );
+
+  const handleDragStart = useCallback(() => {
+    isDraggingRef.current = true;
+  }, []);
+
+  const handleDragStop = useCallback(
+    (finalLayout: Layout) => handleInteractionEnd(finalLayout),
+    [handleInteractionEnd],
+  );
+
+  const handleResizeStop = useCallback(
+    (finalLayout: Layout) => handleInteractionEnd(finalLayout),
+    [handleInteractionEnd],
+  );
+
   // ── Restore viewport on mount ──────────────────────────────────────────
 
   useEffect(() => {
@@ -135,7 +178,7 @@ export default function WidgetCanvas({
     const currentSnapY = BASE_SNAP_Y * zoomScale;
 
     const handleScroll = () => {
-      if (isSnappingRef.current) return;
+      if (isSnappingRef.current || isDraggingRef.current) return;
 
       if (snapTimerRef.current) clearTimeout(snapTimerRef.current);
       snapTimerRef.current = setTimeout(() => {
@@ -241,6 +284,7 @@ export default function WidgetCanvas({
               className="widget-grid-layout"
               layout={layout}
               width={GRID_WIDTH}
+              positionStrategy={positionStrategy}
               gridConfig={{
                 cols: GRID_COLS,
                 rowHeight: ROW_HEIGHT,
@@ -255,6 +299,9 @@ export default function WidgetCanvas({
                 threshold: 3,
               }}
               onLayoutChange={handleLayoutChange}
+              onDragStart={handleDragStart}
+              onDragStop={handleDragStop}
+              onResizeStop={handleResizeStop}
             >
               {widgets.map((widget) => (
                 <div key={widget.id} className="widget-container">

@@ -229,12 +229,17 @@ function layoutReducer(state: TabbedLayout, action: LayoutAction): TabbedLayout 
 
 export function useWidgetLayout() {
   const [layout, dispatch] = useReducer(layoutReducer, null, createDefaultTabbedLayout);
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoadDone = useRef(false);
 
   // Load layout on mount: try Supabase first, then local file, then defaults
+  // IMPORTANT: wait for auth to resolve before loading, otherwise
+  // the effect runs with user=null, sets initialLoadDone=true,
+  // and the Supabase path never executes.
   useEffect(() => {
+    if (authLoading) return;
+
     async function load() {
       if (initialLoadDone.current) return;
       initialLoadDone.current = true;
@@ -288,7 +293,7 @@ export function useWidgetLayout() {
       // Use defaults (already set as initial state)
     }
     load();
-  }, [user]);
+  }, [user, authLoading]);
 
   // Debounced save whenever layout changes
   useEffect(() => {

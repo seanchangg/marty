@@ -6,6 +6,7 @@ import SignupForm from "@/components/auth/SignupForm";
 import DynoSprite from "@/components/sprite/DynoSprite";
 import LoginParticleCanvas from "@/components/login/LoginParticleCanvas";
 import FloatingShapes from "@/components/login/FloatingShapes";
+import FloatingWidgets from "@/components/login/FloatingWidgets";
 import InteractiveLoginCard from "@/components/login/InteractiveLoginCard";
 import { clsx } from "clsx";
 
@@ -18,38 +19,50 @@ export default function LoginPage() {
     <div className="relative flex min-h-screen items-center justify-center bg-background px-4 overflow-hidden">
       <LoginParticleCanvas />
       <FloatingShapes />
-      <InteractiveLoginCard>
-        <div className="mb-6 flex flex-col items-center gap-3">
-          <DynoSprite status="online" size={56} />
-          <h1 className="text-2xl font-bold tracking-wide text-highlight">
-            MARTY
-          </h1>
-          <p className="text-sm text-text/50">Personal Agent Dashboard</p>
-        </div>
+      <FloatingWidgets />
 
-        <div className="mb-6 flex border-b border-primary/20">
-          {(["login", "signup"] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={clsx(
-                "flex-1 py-2.5 text-sm font-medium transition-colors",
-                tab === t
-                  ? "border-b-2 border-highlight text-highlight"
-                  : "text-text/50 hover:text-text/70"
-              )}
-            >
-              {t === "login" ? "Sign In" : "Sign Up"}
-            </button>
-          ))}
-        </div>
+      <div className="relative z-20 flex flex-col items-center gap-6">
+        <InteractiveLoginCard>
+          <div className="mb-6 flex flex-col items-center gap-3">
+            <DynoSprite status="online" size={56} />
+            <h1 className="text-2xl font-bold tracking-wide text-highlight">
+              MARTY
+            </h1>
+            <p className="text-sm text-text/50">Personal Agent Dashboard</p>
+          </div>
 
-        {tab === "login" ? (
-          <LoginForm />
-        ) : (
-          <SignupForm onSwitchToLogin={() => setTab("login")} />
-        )}
-      </InteractiveLoginCard>
+          <div className="mb-6 flex border-b border-primary/20">
+            {(["login", "signup"] as Tab[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={clsx(
+                  "flex-1 py-2.5 text-sm font-medium transition-colors",
+                  tab === t
+                    ? "border-b-2 border-highlight text-highlight"
+                    : "text-text/50 hover:text-text/70"
+                )}
+              >
+                {t === "login" ? "Sign In" : "Sign Up"}
+              </button>
+            ))}
+          </div>
+
+          {tab === "login" ? (
+            <LoginForm />
+          ) : (
+            <SignupForm onSwitchToLogin={() => setTab("login")} />
+          )}
+        </InteractiveLoginCard>
+
+        <p
+          className="max-w-sm text-center text-xs text-text/30 leading-relaxed"
+          style={{ animation: "float-in 0.6s ease-out 1.2s both" }}
+        >
+          Your personal AI agent that manages files, remembers context,
+          runs tasks autonomously, and builds its own dashboard widgets.
+        </p>
+      </div>
     </div>
   );
 }

@@ -205,11 +205,17 @@ export async function readTelemetry(): Promise<Record<string, unknown>[]> {
 
 const DEFAULT_MAX_STORED_MESSAGES = 200;
 
-export async function readChatHistory(): Promise<Record<string, unknown>[]> {
+function chatHistoryPath(userId?: string): string {
   const dataDir = getDataDir();
-  const historyPath = path.join(dataDir, "logs", "chat-history.json");
+  if (userId) {
+    return path.join(dataDir, "logs", `chat-history-${userId}.json`);
+  }
+  return path.join(dataDir, "logs", "chat-history.json");
+}
+
+export async function readChatHistory(userId?: string): Promise<Record<string, unknown>[]> {
   try {
-    const raw = await fs.readFile(historyPath, "utf-8");
+    const raw = await fs.readFile(chatHistoryPath(userId), "utf-8");
     return JSON.parse(raw);
   } catch {
     return [];
@@ -218,19 +224,17 @@ export async function readChatHistory(): Promise<Record<string, unknown>[]> {
 
 export async function writeChatHistory(
   messages: Record<string, unknown>[],
-  maxStoredMessages?: number
+  maxStoredMessages?: number,
+  userId?: string,
 ): Promise<void> {
-  const dataDir = await ensureDynoDir();
-  const historyPath = path.join(dataDir, "logs", "chat-history.json");
+  await ensureDynoDir();
   const limit = maxStoredMessages ?? DEFAULT_MAX_STORED_MESSAGES;
   const trimmed = messages.slice(-limit);
-  await fs.writeFile(historyPath, JSON.stringify(trimmed, null, 2), "utf-8");
+  await fs.writeFile(chatHistoryPath(userId), JSON.stringify(trimmed, null, 2), "utf-8");
 }
 
-export async function clearChatHistory(): Promise<void> {
-  const dataDir = getDataDir();
-  const historyPath = path.join(dataDir, "logs", "chat-history.json");
-  await fs.writeFile(historyPath, "[]", "utf-8");
+export async function clearChatHistory(userId?: string): Promise<void> {
+  await fs.writeFile(chatHistoryPath(userId), "[]", "utf-8");
 }
 
 export async function readLayout(): Promise<unknown> {
