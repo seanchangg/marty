@@ -299,6 +299,26 @@ export class LayoutStore {
         };
       }
 
+      case "reset": {
+        // Reset to defaults — keep only master-chat with default position
+        return {
+          ...state,
+          tabs: state.tabs.map((t) =>
+            t.id === targetTabId
+              ? {
+                  ...t,
+                  widgets: [
+                    { id: "welcome-banner", type: "markdown", x: 0, y: 0, w: 7, h: 3 },
+                    { id: "setup-guide", type: "markdown", x: 7, y: 0, w: 5, h: 3 },
+                    { id: "master-chat", type: "chat", x: 0, y: 3, w: 7, h: 8, sessionId: "master" },
+                    { id: "tutorial", type: "tutorial", x: 7, y: 3, w: 5, h: 8 },
+                  ],
+                }
+              : t
+          ),
+        };
+      }
+
       case "tab_create": {
         // tabId is always provided by orchestration.ts — never generate here
         if (!m.tabId) return state;

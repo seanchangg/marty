@@ -425,19 +425,9 @@ export function SessionManagerProvider({ children, onUIAction }: SessionManagerP
         if (endSessionId !== "master") {
           saveChildSession(endSessionId, store.getSession(endSessionId));
         }
-        // Safety net: re-ensure the child chat widget still exists in the layout.
-        // Skip for "terminated" — that means the user explicitly closed it.
-        // The layout reducer's "add" is idempotent (skips duplicates), so this
-        // is a no-op if the widget is already present.
-        if (endSessionId !== "master" && data.status !== "terminated" && onUIActionRef.current) {
-          onUIActionRef.current({
-            action: "add",
-            widgetId: `chat-${endSessionId}`,
-            widgetType: "chat",
-            sessionId: endSessionId,
-            props: { sessionId: endSessionId },
-          });
-        }
+        // Do NOT re-add the child widget here. The widget was already added
+        // on "session_created". Re-adding would fight against intentional
+        // removals (reset, clear, or user closing the widget).
         break;
       }
 

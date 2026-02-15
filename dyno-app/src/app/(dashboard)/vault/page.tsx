@@ -12,26 +12,26 @@ const BUCKETS: { key: BucketName; label: string; description: string; emptyMessa
   {
     key: "workspace",
     label: "Workspace",
-    description: "Files your agent creates and works with",
-    emptyMessage: "No workspace files yet — your agent will create files here as it works",
+    description: "Your agent's working folder — documents, data, and anything it creates while helping you",
+    emptyMessage: "Nothing here yet — your agent will save files here as it works on tasks for you",
   },
   {
     key: "scripts",
     label: "Scripts",
-    description: "Reusable code your agent has saved",
-    emptyMessage: "No scripts yet — your agent saves reusable code here",
+    description: "Code your agent has written and saved so it can reuse it later",
+    emptyMessage: "No scripts yet — when your agent writes reusable code, it saves it here",
   },
   {
     key: "widgets",
     label: "Widgets",
-    description: "Dashboard widget source files",
-    emptyMessage: "No widget files yet",
+    description: "The source files behind your dashboard widgets — charts, tools, and custom components",
+    emptyMessage: "No widget files yet — ask your agent to build something custom for your dashboard",
   },
   {
     key: "uploads",
     label: "Uploads",
-    description: "Files you've uploaded for your agent",
-    emptyMessage: "No files uploaded yet — drag and drop files above",
+    description: "Files you've shared with your agent — drop anything here and it can read and work with it",
+    emptyMessage: "No files uploaded yet — drag and drop files above to share them with your agent",
   },
 ];
 
@@ -86,7 +86,7 @@ export default function VaultPage() {
 
   return (
     <div className="max-w-6xl">
-      <div className="flex items-baseline justify-between mb-6">
+      <div className="flex items-baseline justify-between mb-2">
         <h1 className="text-xl font-bold text-highlight">Files</h1>
         {!loading && files.length > 0 && (
           <p className="text-xs text-text/40">
@@ -94,6 +94,12 @@ export default function VaultPage() {
           </p>
         )}
       </div>
+      <p className="text-sm text-text/40 mb-6 max-w-2xl leading-relaxed">
+        Everything your agent creates and everything you upload lives here.
+        Files are stored securely in the cloud and organized into folders
+        by type. Click any file to preview it, or drag and drop into Uploads
+        to give your agent something to work with.
+      </p>
 
       {/* Bucket tabs */}
       <div className="flex gap-2 mb-2">

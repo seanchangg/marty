@@ -14,10 +14,16 @@ export default function LandingPage() {
       {/* Hero */}
       <HeroSection />
 
-      {/* Section 1: Plug in your Claude */}
+      {/* Section 1: CREATE ANYTHING */}
+      <CreateAnythingSection />
+
+      {/* Section 2: How It Works */}
+      <HowItWorksSection />
+
+      {/* Section 3: Plug in your Claude */}
       <PlugInSection />
 
-      {/* Section 2: Configure Context */}
+      {/* Section 3: Configure Context */}
       <FeatureSection
         title="Configure Context"
         description="Give your agent the knowledge it needs. Define memory, link integrations, and set behavioral rules — so it understands your world from day one."
@@ -25,7 +31,7 @@ export default function LandingPage() {
         <VideoPlaceholder label="Demo — Context Configuration" />
       </FeatureSection>
 
-      {/* Section 3: Customize your Dashboard */}
+      {/* Section 4: Customize your Dashboard */}
       <FeatureSection
         title="Customize your Dashboard"
         description="Drag, resize, and arrange widgets on an infinite canvas. Build the control center that fits how you think — not the other way around."
@@ -34,24 +40,24 @@ export default function LandingPage() {
         <VideoPlaceholder label="Demo — Dashboard Customization" />
       </FeatureSection>
 
-      {/* Section 4: Manage Side-Assistants */}
+      {/* Section 5: Manage Side-Assistants */}
       <FeatureSection
-        title="Manage Side-Assistants"
-        description="Spin up focused sub-agents for specific jobs — research, scheduling, code review. Each one runs independently and reports back to your main agent."
+        title="Deploy Mini-Marty's"
+        description="Spin up focused sub-marty's (marties?) for specific jobs — research, scheduling, code review. Each one runs independently and reports back to your main agent."
       >
         <VideoPlaceholder label="Demo — Side-Assistants" />
       </FeatureSection>
 
-      {/* Section 5: CREATE ANYTHING */}
-      <CreateAnythingSection />
-
       {/* Footer CTA */}
-      <section className="flex flex-col items-center justify-center py-32 gap-8">
+      <section className="flex flex-col items-center justify-center py-32 gap-12">
         <DynoSprite status="working" size={64} noTrack />
 
-        <LandingCTA onClick={() => { window.location.href = "/login"; }}>
-          Get Started
-        </LandingCTA>
+        <button
+          onClick={() => { window.location.href = "/login"; }}
+          className="text-3xl font-semibold text-text px-16 py-6 bg-primary border-2 border-primary/20 hover:border-highlight/50 hover:scale-105 transition-all duration-300 cursor-pointer"
+        >
+          Let&apos;s Do It
+        </button>
 
         <p className="text-sm text-text/30">
           Built for humans who want an agent that just works.
@@ -68,7 +74,6 @@ function PlugInSection() {
 
   return (
     <section
-      id="features-start"
       ref={ref}
       className="min-h-screen flex items-center justify-center px-8 py-24"
     >
@@ -148,13 +153,96 @@ function PlugInSection() {
   );
 }
 
+/* ── How It Works ─────────────────────────────────────────────── */
+
+const STEPS = [
+  {
+    number: "1",
+    title: "Describe it",
+    detail: "Tell Marty what you need in plain English. A tracker, a dashboard, a workflow — anything.",
+  },
+  {
+    number: "2",
+    title: "Marty builds it",
+    detail: "Your agent writes the code, connects the data, and assembles a working widget in seconds.",
+  },
+  {
+    number: "3",
+    title: "Use it",
+    detail: "It lands on your dashboard, ready to go. Tweak it, resize it, or ask Marty to change it anytime.",
+  },
+];
+
+function HowItWorksSection() {
+  const [ref, isInView] = useInView(0.15);
+
+  return (
+    <section
+      ref={ref}
+      className="flex items-center justify-center px-8 py-32"
+    >
+      <div
+        className="flex flex-col items-center gap-16 max-w-4xl w-full"
+        style={{
+          opacity: isInView ? 1 : 0,
+          transform: isInView ? "translateY(0)" : "translateY(32px)",
+          transition: "opacity 0.6s ease-out, transform 0.6s ease-out",
+        }}
+      >
+        <h2 className="text-4xl font-bold text-highlight tracking-wide text-center">
+          How it works
+        </h2>
+
+        <div className="grid grid-cols-3 gap-12 w-full">
+          {STEPS.map((step, i) => (
+            <div
+              key={step.number}
+              className="flex flex-col items-center text-center gap-4"
+              style={{
+                opacity: isInView ? 1 : 0,
+                transform: isInView ? "translateY(0)" : "translateY(20px)",
+                transition: `opacity 0.5s ease-out ${0.2 + i * 0.15}s, transform 0.5s ease-out ${0.2 + i * 0.15}s`,
+              }}
+            >
+              {/* Step number */}
+              <div className="w-14 h-14 border-2 border-highlight/30 flex items-center justify-center">
+                <span className="text-2xl font-bold text-highlight/70">{step.number}</span>
+              </div>
+
+              {/* Connector line (not on last) */}
+              <h3 className="text-xl font-semibold text-text/80">{step.title}</h3>
+              <p className="text-sm text-text/40 leading-relaxed">{step.detail}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Connector arrows between steps */}
+        <div className="relative w-full -mt-[140px] pointer-events-none hidden lg:flex justify-between px-[120px]">
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-full h-px bg-primary/20" />
+            <div className="w-2 h-2 border-r-2 border-b-2 border-primary/20 rotate-[-45deg] -ml-2 flex-shrink-0" />
+          </div>
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-full h-px bg-primary/20" />
+            <div className="w-2 h-2 border-r-2 border-b-2 border-primary/20 rotate-[-45deg] -ml-2 flex-shrink-0" />
+          </div>
+        </div>
+
+        <div className="w-full mt-8">
+          <VideoPlaceholder label="Demo — Building a Widget" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── CREATE ANYTHING ───────────────────────────────────────────── */
 
 function CreateAnythingSection() {
   const [ref, isInView] = useInView(0.1);
 
   return (
-    <section ref={ref} className="min-h-screen flex flex-col items-center justify-center py-32 overflow-hidden">
+    <section id="features-start" ref={ref} className="min-h-screen flex flex-col items-center justify-center py-32 overflow-hidden">
       {/* Text — constrained */}
       <div
         className="flex flex-col items-center gap-6 text-center px-8 mb-16"
@@ -168,9 +256,9 @@ function CreateAnythingSection() {
           CREATE ANYTHING
         </h2>
         <p className="text-text/50 text-xl leading-relaxed max-w-2xl">
-          Widgets are code. If you can describe it, Marty can build it —
-          dashboards, tools, visualizations, automations. No templates, no
-          limits. Just tell your agent what you need.
+          AI agents shouldn&apos;t just be for programmers. Describe what you
+          need — a dashboard, a tool, a workflow — and
+          Marty builds it for you. No code, no config, no learning curve.
         </p>
       </div>
 
@@ -179,39 +267,9 @@ function CreateAnythingSection() {
         <WidgetPanorama />
       </div>
 
-      {/* Capability hints — constrained */}
-      <div
-        className="grid grid-cols-3 gap-8 max-w-5xl w-full px-8 mt-16"
-        style={{
-          opacity: isInView ? 1 : 0,
-          transform: isInView ? "translateY(0)" : "translateY(20px)",
-          transition: "opacity 1s ease-out 0.3s, transform 1s ease-out 0.3s",
-        }}
-      >
-        {[
-          {
-            title: "Live Data Widgets",
-            desc: "Pull from any API and render it in real time. Weather, stocks, CI pipelines — anything with an endpoint.",
-          },
-          {
-            title: "Custom Tools",
-            desc: "Build internal tools that connect to your stack. Database queries, deployment triggers, log viewers.",
-          },
-          {
-            title: "Automations",
-            desc: "Chain actions together. When X happens, do Y. Marty handles the wiring, you set the rules.",
-          },
-        ].map((item) => (
-          <div key={item.title} className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold text-highlight/80">
-              {item.title}
-            </h3>
-            <p className="text-xs text-text/40 leading-relaxed">
-              {item.desc}
-            </p>
-          </div>
-        ))}
-      </div>
+      <p className="text-2xl font-bold text-text/25 tracking-wide mt-12">
+        Built by users. No code involved.
+      </p>
     </section>
   );
 }

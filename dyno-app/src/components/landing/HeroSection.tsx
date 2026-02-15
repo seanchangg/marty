@@ -52,8 +52,8 @@ export default function HeroSection() {
             transform: visible ? "translateY(0)" : "translateY(24px)",
           }}
         >
-          <p className="text-lg text-text/60 text-center max-w-md">
-            Your personal AI agent. Always on, always learning, always yours.
+          <p className="text-lg text-text/60 text-center max-w">
+            A plug and play sandbox for your personal AI agent, because making what you want shouldn't have prerequisites. <br /> No developer background needed, no knowledge of code agents required. <br /> Just ask, and <span className="font-bold text-highlight italic">think big</span>
           </p>
         </div>
 
@@ -71,7 +71,7 @@ export default function HeroSection() {
                 ?.scrollIntoView({ behavior: "smooth" });
             }}
           >
-            What Can I Do?
+            Get Started
           </LandingCTA>
         </div>
       </div>

@@ -17,6 +17,7 @@ const ROW_HEIGHT = 420; // display px — adjust this to scale the panorama
 
 interface ShowcaseItem {
   id: string;
+  prompt: string;
   image: string;
   /** Original image pixel dimensions (used to compute aspect-correct display width) */
   pw: number;
@@ -25,19 +26,19 @@ interface ShowcaseItem {
 
 // Display width is computed: (pw / ph) * ROW_HEIGHT
 const ROW_1: ShowcaseItem[] = [
-  { id: "flashcards",   image: "/showcase/flashcards.png",   pw: 1036, ph: 1046 },
-  { id: "weather-map",  image: "/showcase/weather-map.png",  pw: 1828, ph: 1046 },
-  { id: "music-player", image: "/showcase/music-player.png", pw: 1568, ph: 1052 },
-  { id: "kanban",       image: "/showcase/kanban.png",       pw: 1836, ph: 1042 },
-  { id: "sec-analyzer", image: "/showcase/sec-analyzer.png", pw: 1836, ph: 1038 },
+  { id: "flashcards",   prompt: "Make me a flashcard widget I can study with",                                           image: "/showcase/flashcards.png",   pw: 1036, ph: 1046 },
+  { id: "weather-map",  prompt: "Build a weather widget that shows weather trends all across the world",             image: "/showcase/weather-map.png",  pw: 1828, ph: 1046 },
+  { id: "music-player", prompt: "Build me a widget where I can search and play songs",                            image: "/showcase/music-player.png", pw: 1568, ph: 1052 },
+  { id: "kanban",       prompt: "Create a kanban board so I can organize my tasks into columns",                                 image: "/showcase/kanban.png",       pw: 1836, ph: 1042 },
+  { id: "sec-analyzer", prompt: "I need a tool that pulls SEC 10-K filings and breaks down the financials for any stock ticker", image: "/showcase/sec-analyzer.png", pw: 1836, ph: 1038 },
 ];
 
 const ROW_2: ShowcaseItem[] = [
-  { id: "pomodoro",     image: "/showcase/pomodoro.png",     pw: 1036, ph: 1048 },
-  { id: "ai-papers",    image: "/showcase/ai-papers.png",    pw: 1828, ph: 1038 },
-  { id: "cot-report",   image: "/showcase/cot-report.png",   pw: 1834, ph: 1044 },
-  { id: "news-podcast", image: "/showcase/news-podcast.png", pw: 1828, ph: 1050 },
-  { id: "grant-finder", image: "/showcase/grant-finder.png", pw: 1560, ph: 1052 },
+  { id: "pomodoro",     prompt: "Make me a pomodoro timer with work and break sessions",                                         image: "/showcase/pomodoro.png",     pw: 1036, ph: 1048 },
+  { id: "ai-papers",    prompt: "Show me the top AI papers published this week with summaries",                                  image: "/showcase/ai-papers.png",    pw: 1828, ph: 1038 },
+  { id: "cot-report",   prompt: "Build a widget parses Commision of Traders reports",    image: "/showcase/cot-report.png",   pw: 1834, ph: 1044 },
+  { id: "news-podcast", prompt: "Make a news widget that generates a podcast from today's headlines",                             image: "/showcase/news-podcast.png", pw: 1828, ph: 1050 },
+  { id: "grant-finder", prompt: "Build a grant finder",         image: "/showcase/grant-finder.png", pw: 1560, ph: 1052 },
 ];
 
 function displayWidth(item: ShowcaseItem): number {
@@ -50,7 +51,7 @@ function Card({ item }: { item: ShowcaseItem }) {
   const w = displayWidth(item);
   return (
     <div
-      className="flex-shrink-0 overflow-hidden border-2 border-primary/20 bg-surface"
+      className="flex-shrink-0 overflow-hidden border-2 border-primary/20 bg-surface relative group"
       style={{ width: w, height: ROW_HEIGHT }}
     >
       <Image
@@ -58,9 +59,17 @@ function Card({ item }: { item: ShowcaseItem }) {
         alt={item.id}
         width={w}
         height={ROW_HEIGHT}
-        className="object-cover w-full h-full"
+        className="object-cover w-full h-full transition-[filter] duration-300 group-hover:brightness-[0.3]"
         unoptimized
       />
+      {/* Hover overlay — shows the prompt used to create this widget */}
+      <div className="absolute inset-0 flex items-center justify-center px-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+        <div className="bg-primary/80 border border-primary/40 px-5 py-4 max-w-md">
+          <p className="text-sm text-text/80 leading-relaxed italic">
+            &ldquo;{item.prompt}&rdquo;
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
