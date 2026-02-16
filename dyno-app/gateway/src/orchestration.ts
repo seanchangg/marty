@@ -445,6 +445,7 @@ export class OrchestrationHandler {
     );
     const childTools = [...filteredLegacy, ...CHILD_ORCHESTRATION_TOOL_DEFS];
     const skillsBlock = this.skillsPrompt ? `\n\n${this.skillsPrompt}` : "";
+    console.log(`[orchestration] Child ${child.id}: ${childTools.length} tools, skillsPrompt=${this.skillsPrompt.length} chars, systemPrompt=${this.systemPrompt.length} chars`);
     const childSystemText = this.userId
       ? `${this.systemPrompt}\n\n${this.toolDescriptionsAppendix}${skillsBlock}\n\nThe current user's ID is: ${this.userId}`
       : `${this.systemPrompt}\n\n${this.toolDescriptionsAppendix}${skillsBlock}`;
@@ -474,7 +475,7 @@ export class OrchestrationHandler {
       const isOpus = child.model.includes("opus");
       const response = await client.messages.create({
         model: child.model,
-        max_tokens: 8192,
+        max_tokens: 16384,
         system: cachedSystem,
         tools: childTools,
         messages: child.messages,
@@ -497,6 +498,7 @@ export class OrchestrationHandler {
           .filter((b): b is Anthropic.TextBlock => b.type === "text")
           .map((b) => b.text)
           .join("");
+        console.log(`[orchestration] Child ${child.id} end_turn at iteration ${iteration}, stop_reason=${response.stop_reason}, text=${finalText.slice(0, 150)}...`);
         child.result = finalText.slice(0, 500);
         child.status = "completed";
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { VaultFile } from "@/hooks/useVaultFiles";
 import type { BucketName } from "@/hooks/useStorageFiles";
+import { authFetch } from "@/lib/api";
 
 interface FilePreviewProps {
   file: VaultFile;
@@ -52,7 +53,7 @@ export default function FilePreview({ file, userId, onClose, bucket = "uploads" 
         bucket === "uploads"
           ? `/api/uploads/preview?filename=${encodeURIComponent(filename)}&userId=${encodeURIComponent(uid)}`
           : `/api/storage/preview?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(filename)}&userId=${encodeURIComponent(uid)}`;
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await authFetch(url, { signal: controller.signal });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Preview failed");

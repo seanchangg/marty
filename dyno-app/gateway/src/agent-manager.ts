@@ -20,6 +20,178 @@ const DEFAULT_CONTEXT_FILES: Record<string, string> = {
   "heartbeat.md": DEFAULT_HEARTBEAT_MD,
 };
 
+const DEFAULT_CHILD_FULLSTACK_WIDGETS_SKILL = `---
+id: fullstack-widgets
+name: Full-Stack Widget Authoring
+description: Patterns for building widgets with interactive frontends backed by server-side scripts
+version: 1.0.0
+author: system
+tags: [widgets, fullstack, child-agents]
+---
+
+# Full-Stack Widgets
+
+Build interactive HTML widgets with server-side computation by combining \`save_script\` (backend) + \`write_file\` (frontend HTML) + \`ui_action\` (dashboard placement).
+
+## How It Works
+
+There are separate Supabase Storage buckets for different data types. You don't interact with buckets directly — the tools and API routes handle this for you:
+
+- **\`save_script\`** → saves to the **scripts** bucket (for backend execution via \`run_script\`)
+- **\`write_file workspace/widgets/foo.html\`** → saves to the **workspace** bucket (for widget HTML)
+- **\`/api/widget-html/foo.html\`** → Next.js route that serves widget HTML (checks both workspace and widgets buckets automatically)
+- **\`/api/widget-exec\`** → Next.js route that runs a saved script with JSON input (same-origin, callable from widget iframes)
+
+The iframe is served from the same origin as the app, so \`fetch('/api/widget-exec')\` just works.
+
+## The 3-Step Pattern
+
+### Step 1: Save the backend script
+
+Use \`save_script\`. The script reads JSON from **stdin** and prints JSON to **stdout**.
+
+**Python** (recommended):
+\`\`\`python
+import sys, json
+data = json.load(sys.stdin)
+result = {"greeting": f"Hello, {data['name']}!"}
+print(json.dumps(result))
+\`\`\`
+
+**JavaScript:**
+\`\`\`javascript
+const chunks = [];
+process.stdin.on('data', c => chunks.push(c));
+process.stdin.on('end', () => {
+  const data = JSON.parse(Buffer.concat(chunks).toString());
+  console.log(JSON.stringify({ greeting: \\\`Hello, \\\${data.name}!\\\` }));
+});
+\`\`\`
+
+Example:
+\`\`\`
+save_script name=my-backend, language=python, description="Backend for my widget", code="import sys,json\\ndata=json.load(sys.stdin)\\nprint(json.dumps({'echo': data}))"
+\`\`\`
+
+### Step 2: Write the widget HTML
+
+Use \`write_file\` to save HTML to **\`workspace/widgets/my-widget.html\`**. This is the required path.
+
+The HTML can call \`/api/widget-exec\` to run backend scripts. The platform automatically injects \`window.__DYNO_USER_ID\` into the served HTML — always include it in your fetch calls.
+
+**The \`/api/widget-exec\` endpoint expects this exact JSON body format:**
+\`\`\`json
+{ "script": "my-backend", "input": { ... }, "userId": "..." }
+\`\`\`
+The field MUST be called \`script\` (not \`name\`, \`scriptName\`, or \`script_name\`).
+
+\`\`\`html
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: sans-serif; padding: 16px; color: #E0E6E1; background: #121A14; }
+    .error { color: #ff6b6b; }
+  </style>
+</head>
+<body>
+  <div id="app">Loading...</div>
+  <script>
+    async function callBackend(script, input) {
+      const res = await fetch('/api/widget-exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          script,
+          input,
+          userId: window.__DYNO_USER_ID || ''
+        })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.stderr || 'Script failed');
+      return JSON.parse(data.stdout);
+    }
+
+    async function init() {
+      try {
+        const result = await callBackend('my-backend', { name: 'World' });
+        document.getElementById('app').textContent = result.greeting;
+      } catch (err) {
+        document.getElementById('app').innerHTML =
+          '<span class="error">' + err.message + '</span>';
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
+\`\`\`
+
+**Important rules for widget HTML:**
+- **Always include \`userId: window.__DYNO_USER_ID\`** in widget-exec fetch calls
+- Use **relative URLs** (\`/api/widget-exec\`, not \`http://localhost:3000/api/widget-exec\`)
+- Do NOT write to Supabase buckets directly — use \`write_file\` which handles routing
+- The widget iframe is same-origin with the app, so \`/api/\` calls work
+
+### Step 3: Add the widget to the dashboard
+
+Use \`ui_action\` with \`src\` pointing to the **widget-html API route**:
+
+\`\`\`
+ui_action action=add, widgetType=html, widgetId=my-widget, props={ src: "/api/widget-html/my-widget.html" }, size={w: 8, h: 6}, position={x: 16, y: 0}
+\`\`\`
+
+**Critical:** The \`src\` must be \`/api/widget-html/FILENAME.html\`. Do NOT use raw Supabase URLs or localhost URLs.
+
+## State Management Pattern
+
+For widgets that the agent needs to control, use a polling pattern with a JSON state file:
+
+1. Create \`workspace/widgets/widget-name-state.json\` with initial state
+2. Widget polls \`/api/widget-html/widget-name-state.json\` every 1-2 seconds
+3. Agent can update state by writing to that file with \`write_file\`
+4. Widget reacts to state changes
+
+\`\`\`javascript
+let currentState = null;
+
+async function pollState() {
+  try {
+    const res = await fetch('/api/widget-html/music-player-state.json');
+    const newState = await res.json();
+
+    // Check if state changed
+    if (JSON.stringify(newState) !== JSON.stringify(currentState)) {
+      currentState = newState;
+      updateUI(newState);
+    }
+  } catch (err) {
+    console.error('State poll failed:', err);
+  }
+}
+
+// Poll every 2 seconds
+setInterval(pollState, 2000);
+pollState(); // Initial load
+\`\`\`
+
+## Execution Environment
+
+Scripts run in Docker with pre-installed packages: \`requests\`, \`pandas\`, \`numpy\`, \`matplotlib\`, etc.
+Do NOT \`pip install\` at runtime — packages are lost after execution. Only use pre-installed packages.
+
+For HTTP requests: \`requests\` is available in Python scripts.
+
+## Common Mistakes
+
+- **pip installing at runtime**: Won't persist. Use pre-installed packages only.
+- **Writing HTML to wrong path**: Must be \`workspace/widgets/filename.html\`
+- **Using absolute URLs**: Always use relative \`/api/\` URLs in widget HTML
+- **Using wrong field name for script**: Must use \`script\` in the fetch body
+- **Not including userId**: Always include \`userId: window.__DYNO_USER_ID\`
+`;
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface AgentEntry {
@@ -134,8 +306,11 @@ export class AgentManager {
     // Provision workspace if needed
     this.workspace.provision(userId);
 
-    // Seed default context files if none exist in Supabase
-    await this.ensureUserContextFiles(userId);
+    // Seed default context files and workspace skills if none exist in Supabase
+    await Promise.all([
+      this.ensureUserContextFiles(userId),
+      this.ensureDefaultWorkspaceSkills(userId),
+    ]);
 
     // Fetch both context files concurrently
     const [claudeContent, soulContent] = await Promise.all([
@@ -213,6 +388,51 @@ export class AgentManager {
       }
     } catch (err) {
       console.warn("[agent-manager] Failed to seed context files:", err);
+    }
+  }
+
+  /** Seed default workspace skills into Supabase storage if not already present. */
+  private async ensureDefaultWorkspaceSkills(userId: string): Promise<void> {
+    if (!this.supabase) return;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceKey) return;
+
+    const skillFile = "fullstack-widgets.md";
+    const storagePath = `${userId}/skills/${skillFile}`;
+
+    try {
+      // Check if the file already exists
+      const checkUrl = `${supabaseUrl}/storage/v1/object/workspace/${storagePath}`;
+      const checkResp = await fetch(checkUrl, {
+        method: "HEAD",
+        headers: {
+          "apikey": serviceKey,
+          "Authorization": `Bearer ${serviceKey}`,
+        },
+      });
+
+      if (checkResp.ok) return; // Already exists
+
+      // Upload the default skill file
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/workspace/${storagePath}`;
+      const uploadResp = await fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          "apikey": serviceKey,
+          "Authorization": `Bearer ${serviceKey}`,
+          "Content-Type": "text/markdown",
+        },
+        body: DEFAULT_CHILD_FULLSTACK_WIDGETS_SKILL,
+      });
+
+      if (uploadResp.ok) {
+        console.log(`[agent-manager] Seeded workspace skill ${skillFile} for user ${userId}`);
+      } else {
+        console.warn(`[agent-manager] Failed to seed skill ${skillFile}: ${uploadResp.status}`);
+      }
+    } catch (err) {
+      console.warn("[agent-manager] Failed to seed workspace skills:", err);
     }
   }
 

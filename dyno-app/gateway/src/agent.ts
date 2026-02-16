@@ -364,9 +364,9 @@ export class GatewayAgent {
       // Auto-inject core-state memory (best-effort, non-blocking on failure)
       const coreState = await this.fetchCoreState(userId);
       if (coreState) {
-        systemPrompt += `\n\n## Core State\nThis is your persistent awareness from previous sessions. Use it to stay consistent.\nIMPORTANT: When you learn something new about the user (preferences, projects, context, corrections) or complete significant work, proactively update your core-state by calling save_memory with tag "core-state". You do not need to be asked — maintaining your own memory is part of being an autonomous agent.\n${coreState}`;
+        systemPrompt += `\n\n## Core State (auto-loaded from memory)\nThis is your persistent working memory from previous sessions:\n\n${coreState}\n\n---\n**CORE-STATE RULE:** Update your core-state IMMEDIATELY after each action — not at the end of the conversation. Call save_memory with tag "core-state" right after you create a widget, save a script, learn a preference, or do anything persistent. Do it inline, between actions, as part of your workflow. Conversations can be interrupted or cut short at any time — if you wait until the end, you risk losing everything. Treat core-state updates like saving a file: do it early and often. Keep it under 300 words, structured, not narrative.`;
       } else {
-        systemPrompt += `\n\n## Core State\nYou have no core-state memory yet. After this conversation, use save_memory with tag "core-state" to record key facts about the user and any important context. This persists across sessions and is how you maintain continuity.`;
+        systemPrompt += `\n\n## Core State\nYou have NO core-state memory yet. This means you have no memory of any previous sessions with this user.\n\n**FIRST PRIORITY:** Create your core-state IMMEDIATELY — before doing anything else the user asked. Call save_memory with tag "core-state" right now to record what you see on the dashboard and any context you have. Then continue with the user's request, updating core-state after each significant action. Do not wait until the end of the conversation — sessions can be interrupted at any time.`;
       }
     }
 
@@ -634,6 +634,12 @@ export class GatewayAgent {
     const messages: Anthropic.MessageParam[] = [...history, { role: "user", content: prompt }];
     const tools = this.getTools();
 
+    // Track whether the agent did meaningful work and whether it updated core-state.
+    // If it did work but forgot to update core-state, we nudge it with one extra turn.
+    const MUTATION_TOOLS = new Set(["ui_action", "save_script", "write_file", "modify_file", "db_insert", "db_update", "create_skill", "update_skill", "register_webhook"]);
+    let didMutate = false;
+    let didUpdateCoreState = false;
+
     // Enable prompt caching: system prompt and tools are identical every iteration
     const cachedSystem: Anthropic.TextBlockParam[] = [
       { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
@@ -686,8 +692,25 @@ export class GatewayAgent {
         }
       }
 
-      // If no tool use, we're done
+      // If no tool use, the agent wants to finish.
+      // But if it did meaningful work without updating core-state, nudge it
+      // with one extra turn so it doesn't forget.
       if (response.stop_reason !== "tool_use") {
+        if (didMutate && !didUpdateCoreState && iteration < this.config.maxIterations - 1) {
+          // Give the agent one more turn with a reminder
+          didUpdateCoreState = true; // prevent infinite nudge loop
+          const nudgeText = response.content
+            .filter((b): b is Anthropic.TextBlock => b.type === "text")
+            .map((b) => b.text)
+            .join("");
+          messages.push({ role: "assistant", content: nudgeText || "Done." });
+          messages.push({
+            role: "user",
+            content: "[SYSTEM] You performed actions this session but did not update your core-state memory. Call save_memory with tag \"core-state\" now to record what you did, so you remember next session. Then give your final response to the user.",
+          });
+          continue;
+        }
+
         const finalText = response.content
           .filter((b): b is Anthropic.TextBlock => b.type === "text")
           .map((b) => b.text)
@@ -766,6 +789,15 @@ export class GatewayAgent {
             content: "User denied this action. Do not retry. Move on.",
             is_error: true,
           });
+        }
+      }
+
+      // Track whether the agent performed mutations or updated core-state
+      for (const block of toolBlocks) {
+        if (MUTATION_TOOLS.has(block.name)) didMutate = true;
+        if (block.name === "save_memory") {
+          const input = block.input as Record<string, unknown>;
+          if (input.tag === "core-state") didUpdateCoreState = true;
         }
       }
 

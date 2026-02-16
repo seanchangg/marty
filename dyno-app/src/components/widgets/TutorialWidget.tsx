@@ -7,7 +7,7 @@ const EXAMPLE_PROMPTS = [
     category: "Try it out",
     description: "Simple tasks to see what Marty can do",
     prompts: [
-      "Create a music widget that lets me search and play songs",
+      "Create a music widget that lets me search and play songs on youtube",
       "Take a screenshot of https://news.ycombinator.com",
       "What time is it in Tokyo right now? Show me in a widget.",
     ],
